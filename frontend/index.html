@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>Mining Hub</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">M</span><span>MINING HUB</span></div>
+    <div class="wallet"><small>COINS</small><strong id="coin-balance">0</strong></div>
+  </header>
+  <main class="shell">
+    <section class="welcome">
+      <p class="eyebrow">YOUR MINING DASHBOARD</p>
+      <h1>Build your mining journey.</h1>
+      <p class="muted">Manage your islands, boxes, rewards and account in one place.</p>
+      <div class="stats">
+        <article><small>GEMS</small><strong id="gem-balance">—</strong></article>
+        <article><small>MINING / DAY</small><strong id="daily-rate">—</strong></article>
+        <article><small>REFERRALS</small><strong id="referral-count">—</strong></article>
+      </div>
+    </section>
+
+    <section class="section-heading">
+      <div><p class="eyebrow">EXPLORE</p><h2>Your Islands</h2></div>
+      <span class="pill">10 ISLANDS</span>
+    </section>
+    <section class="island-grid" id="island-grid">
+      <article class="island-card active">
+        <div class="island-icon">Ⅰ</div><div><h3>Island 1</h3><p>Starter Island · Unlock 500 Gems</p></div>
+        <span class="status">START</span>
+      </article>
+      <article class="island-card locked"><div class="island-icon">Ⅱ</div><div><h3>Island 2</h3><p>Complete Island 1 to unlock</p></div><span class="status">LOCKED</span></article>
+      <article class="island-card locked"><div class="island-icon">Ⅲ</div><div><h3>Island 3</h3><p>Complete Island 2 to unlock</p></div><span class="status">LOCKED</span></article>
+    </section>
+
+    <section class="notice">
+      <strong>Account connection required</strong>
+      <p>Connect Firebase Authentication and the Cloudflare API to load your live balance and mining progress.</p>
+    </section>
+  </main>
+  <nav class="bottom-nav">
+    <a class="selected" href="#home">Home</a><a href="#mining">Mining</a><a href="#spin">Spin</a><a href="#referral">Referral</a><a href="#profile">Profile</a>
+  </nav>
+  <script src="app.js"></script>
+</body>
+</html>
