@@ -7,10 +7,13 @@ window.APP_CONFIG = {
 
   // Firebase Authentication configuration
   FIREBASE: {
-    apiKey: "YOUR_FIREBASE_WEB_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    appId: "YOUR_FIREBASE_APP_ID"
+    apiKey: "AIzaSyByOdbroiBMxmYcKwEQohbdoM2jhTNyRLE",
+    authDomain: "islandora-c1f7b.firebaseapp.com",
+    projectId: "islandora-c1f7b",
+    storageBucket: "islandora-c1f7b.firebasestorage.app",
+    messagingSenderId: "652739048171",
+    appId: "1:652739048171:web:ce730c968742de0397c4ae",
+    measurementId: "G-9XT0X4XDKQ"
   },
 
   // Telegram Mini App configuration
