@@ -191,21 +191,90 @@
   });
 
   // ==========================================
+  // PROFILE PANEL
+  // ==========================================
+
+  const profilePanel = $("#profilePanel");
+
+  function openProfilePanel() {
+    const user = auth.currentUser;
+
+    if (!user) return;
+
+    $("#profileEmail").textContent =
+      user.email || "Email not available";
+
+    $("#profileUid").textContent =
+      user.uid || "User ID not available";
+
+    $("#profileStatus").textContent =
+      user.emailVerified
+        ? "Active · Email verified"
+        : "Active · Email not verified";
+
+    profilePanel.hidden = false;
+  }
+
+  function closeProfilePanel() {
+    profilePanel.hidden = true;
+  }
+
+  // Open profile using top-right profile icon.
+  $("#profileButton").addEventListener(
+    "click",
+    openProfilePanel
+  );
+
+  // Close profile using close button.
+  $("#closeProfileButton").addEventListener(
+    "click",
+    closeProfilePanel
+  );
+
+  // Close profile by clicking outside the card.
+  profilePanel.addEventListener("click", event => {
+    if (event.target === profilePanel) {
+      closeProfilePanel();
+    }
+  });
+
+  // Close profile using Escape key.
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !profilePanel.hidden) {
+      closeProfilePanel();
+    }
+  });
+
+  // ==========================================
   // LOGOUT
   // ==========================================
 
-  $("#profileButton").addEventListener("click", async () => {
+  $("#logoutButton").addEventListener("click", async () => {
     const confirmed = window.confirm(
       "Are you sure you want to logout?"
     );
 
     if (!confirmed) return;
 
+    const logoutButton = $("#logoutButton");
+
+    logoutButton.disabled = true;
+    logoutButton.textContent = "LOGGING OUT...";
+
     try {
       await auth.signOut();
+      closeProfilePanel();
+
     } catch (error) {
       console.error("Logout error:", error);
-      showToast("Unable to logout. Please try again.");
+
+      showToast(
+        "Unable to logout. Please try again."
+      );
+
+    } finally {
+      logoutButton.disabled = false;
+      logoutButton.textContent = "↪ LOG OUT";
     }
   });
 
@@ -221,12 +290,25 @@
       $("#profileButton").title =
         user.email || "Account";
 
+      $("#profileEmail").textContent =
+        user.email || "Email not available";
+
+      $("#profileUid").textContent =
+        user.uid || "User ID not available";
+
+      $("#profileStatus").textContent =
+        user.emailVerified
+          ? "Active · Email verified"
+          : "Active · Email not verified";
+
       console.info(
         "Islandora user authenticated:",
         user.uid
       );
 
     } else {
+      closeProfilePanel();
+
       gameShell.hidden = true;
       authScreen.hidden = false;
 
@@ -671,6 +753,10 @@
         document.querySelector(target)?.scrollIntoView({
           behavior: "smooth"
         });
+
+      } else if (target === "#profile") {
+        openProfilePanel();
+
       } else {
         showToast(
           item.textContent.trim() + " will be available soon."
