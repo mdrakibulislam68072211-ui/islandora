@@ -91,7 +91,7 @@
   ];
 
   // ==========================================
-  // CHEST IMAGE FILES
+  // CHEST IMAGES
   // ==========================================
 
   const chestImages = [
@@ -108,7 +108,7 @@
   ];
 
   // ==========================================
-  // ISLAND 1 BOX PRICES AND MINING RATES
+  // ISLAND 1 BOX DATA
   // ==========================================
 
   const prices = [
@@ -125,10 +125,15 @@
   // PREVIEW STATE
   // ==========================================
 
+  const STORAGE_CAP = 1500;
+
   let selectedIsland = 0;
   let toastTimer = null;
 
   const boxCounts = Array(10).fill(0);
+
+  // This remains zero until the secure backend is connected.
+  let pendingCoins = 0;
 
   const $ = selector => document.querySelector(selector);
 
@@ -145,7 +150,7 @@
   }
 
   // ==========================================
-  // TOAST MESSAGE
+  // TOAST
   // ==========================================
 
   function showToast(message) {
@@ -164,17 +169,16 @@
   }
 
   // ==========================================
-  // ISLAND UNLOCK STATUS
-  // PREVIEW ONLY
+  // UNLOCK STATUS - PREVIEW
   // ==========================================
 
   function isUnlocked(index) {
-    // Actual unlock status will come from backend.
+    // Actual account unlock status will come from backend.
     return index === 0;
   }
 
   // ==========================================
-  // RENDER ISLAND SIDEBAR
+  // RENDER ISLAND LIST
   // ==========================================
 
   function renderIslandList() {
@@ -193,15 +197,19 @@
         >
 
           <span class="island-thumb">
+
             <img
               src="${islandImagePath(index)}"
               alt="${island.name}"
               loading="lazy"
             >
+
           </span>
 
           <span class="island-details">
+
             <strong>Island ${index + 1}</strong>
+
             <span>
               ${
                 unlocked
@@ -209,6 +217,7 @@
                   : "Unlock after completing Island " + index
               }
             </span>
+
           </span>
 
           <span class="island-lock">
@@ -226,6 +235,7 @@
 
   function renderIsland() {
     const island = islands[selectedIsland];
+
     const hero = $("#islandHero");
 
     $("#islandTitle").textContent =
@@ -245,24 +255,23 @@
         ? "✓ UNLOCKED"
         : "🔒 LOCKED";
 
-    // Set the correct original island image.
     hero.style.setProperty(
       "--island-image",
       `url("${islandImagePath(selectedIsland)}")`
     );
 
     renderIslandList();
+
     renderBoxes();
   }
 
   // ==========================================
-  // RENDER MINING BOXES
+  // RENDER CHESTS
   // ==========================================
 
   function renderBoxes() {
     const grid = $("#boxGrid");
 
-    // Locked island preview.
     if (!isUnlocked(selectedIsland)) {
       grid.innerHTML = `
         <div class="locked-island-message">
@@ -287,6 +296,7 @@
 
     grid.innerHTML = prices.map((price, index) => {
       const count = boxCounts[index];
+
       const maxed = count >= 10;
 
       return `
@@ -297,11 +307,13 @@
           </div>
 
           <div class="chest-art">
+
             <img
               src="${chestImagePath(index)}"
               alt="Treasure Chest ${index + 1}"
               loading="lazy"
             >
+
           </div>
 
           <div class="box-cost">
@@ -342,18 +354,44 @@
 
   // ==========================================
   // MINING STORAGE
-  // PREVIEW ONLY
   // ==========================================
 
-  function updateStorage() {
-    $("#pendingCoins").textContent = "0.00";
-    $("#storageAmount").textContent = "0.00";
+  function updateStorage(amount = pendingCoins) {
+    const current = Math.max(
+      0,
+      Math.min(Number(amount) || 0, STORAGE_CAP)
+    );
 
+    pendingCoins = current;
+
+    const percentage = (current / STORAGE_CAP) * 100;
+
+    $("#pendingCoins").textContent =
+      current.toFixed(2);
+
+    $("#storageAmount").textContent =
+      current.toFixed(2);
+
+    $("#storageProgressText").textContent =
+      `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins`;
+
+    $("#storagePercentage").textContent =
+      `${percentage.toFixed(1)}%`;
+
+    $("#storageProgressFill").style.width =
+      `${percentage}%`;
+
+    $("#storagePanel").classList.toggle(
+      "storage-full",
+      current >= STORAGE_CAP
+    );
+
+    // Claim will be enabled only after secure backend integration.
     $("#claimButton").disabled = true;
   }
 
   // ==========================================
-  // ISLAND SELECTION
+  // ISLAND CLICK
   // ==========================================
 
   $("#islandList").addEventListener("click", event => {
@@ -377,7 +415,7 @@
   });
 
   // ==========================================
-  // CHEST BUTTONS
+  // CHEST CLICK
   // ==========================================
 
   $("#boxGrid").addEventListener("click", event => {
@@ -412,7 +450,7 @@
   });
 
   // ==========================================
-  // PROFILE BUTTON
+  // PROFILE
   // ==========================================
 
   $("#profileButton").addEventListener("click", () => {
@@ -450,14 +488,15 @@
   });
 
   // ==========================================
-  // INITIALIZE ISLANDORA
+  // INITIALIZE
   // ==========================================
 
   renderIsland();
-  updateStorage();
+
+  updateStorage(0);
 
   console.info(
-    "Islandora Premium Image Dashboard initialized."
+    "Islandora Premium Dashboard initialized."
   );
 
 })();
