@@ -19,16 +19,301 @@
 
   <link rel="stylesheet" href="styles.css">
 
+  <style>
+    [hidden] {
+      display: none !important;
+    }
+
+    .auth-screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(ellipse at top, #14516a, transparent 65%),
+        linear-gradient(145deg, #05243c, #071626);
+      font-family: Nunito, sans-serif;
+      color: #fff;
+    }
+
+    .auth-card {
+      width: 100%;
+      max-width: 410px;
+      padding: 30px 24px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 22px;
+      background: rgba(8,35,55,.92);
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+
+    .auth-brand {
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    .auth-brand h1 {
+      margin: 0;
+      font-size: 30px;
+      font-weight: 900;
+      letter-spacing: 2px;
+    }
+
+    .auth-brand h1 span {
+      color: #f5c75e;
+    }
+
+    .auth-brand p {
+      color: #a9c2d2;
+      font-size: 12px;
+      letter-spacing: 2px;
+      margin: 5px 0 0;
+    }
+
+    .auth-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .auth-tabs button {
+      flex: 1;
+      padding: 11px;
+      border: 1px solid #31536a;
+      border-radius: 10px;
+      background: #102e43;
+      color: #c5d7e2;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .auth-tabs button.active {
+      background: #e6b94f;
+      color: #172638;
+      border-color: #e6b94f;
+    }
+
+    .auth-card h2 {
+      margin: 0 0 6px;
+      font-size: 23px;
+    }
+
+    .auth-description {
+      margin: 0 0 20px;
+      color: #a9c2d2;
+      font-size: 13px;
+    }
+
+    .auth-field {
+      margin-bottom: 14px;
+    }
+
+    .auth-field label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .auth-field input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 13px;
+      border: 1px solid #36556a;
+      border-radius: 10px;
+      outline: none;
+      background: #071d2d;
+      color: white;
+      font: inherit;
+    }
+
+    .auth-field input:focus {
+      border-color: #e6b94f;
+    }
+
+    .auth-submit {
+      width: 100%;
+      padding: 14px;
+      margin-top: 8px;
+      border: 0;
+      border-radius: 11px;
+      background: linear-gradient(135deg,#f5d477,#d99b31);
+      color: #172638;
+      font-size: 15px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .auth-submit:disabled {
+      opacity: .6;
+      cursor: wait;
+    }
+
+    .auth-error {
+      min-height: 18px;
+      margin: 12px 0 0;
+      color: #ff9292;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .auth-footer {
+      margin-top: 18px;
+      text-align: center;
+      color: #9bb6c7;
+      font-size: 12px;
+    }
+
+    .auth-user {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+      border-radius: 12px;
+      background: rgba(255,255,255,.06);
+      overflow-wrap: anywhere;
+    }
+
+    .auth-user button {
+      margin-left: auto;
+      padding: 8px 12px;
+      border: 1px solid #587286;
+      border-radius: 8px;
+      background: transparent;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="config.js"></script>
+
+  <!-- Firebase Authentication SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
   <script src="app.js" defer></script>
 </head>
 
 <body>
 
-  <div class="game-shell">
+  <!-- AUTHENTICATION SCREEN -->
 
-    <!-- HEADER -->
+  <section class="auth-screen" id="authScreen">
+
+    <div class="auth-card">
+
+      <div class="auth-brand">
+        <h1>ISLAND<span>ORA</span></h1>
+        <p>FANTASY MINING WORLD</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button type="button" id="loginTab" class="active">
+          Login
+        </button>
+
+        <button type="button" id="registerTab">
+          Register
+        </button>
+      </div>
+
+      <form id="loginForm">
+
+        <h2>Welcome Back!</h2>
+        <p class="auth-description">
+          Login to continue your mining adventure.
+        </p>
+
+        <div class="auth-field">
+          <label for="loginEmail">Email Address</label>
+          <input
+            id="loginEmail"
+            type="email"
+            autocomplete="email"
+            placeholder="Enter your email"
+            required
+          >
+        </div>
+
+        <div class="auth-field">
+          <label for="loginPassword">Password</label>
+          <input
+            id="loginPassword"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Enter your password"
+            required
+          >
+        </div>
+
+        <button class="auth-submit" id="loginButton" type="submit">
+          LOGIN
+        </button>
+
+      </form>
+
+      <form id="registerForm" hidden>
+
+        <h2>Create Account</h2>
+        <p class="auth-description">
+          Join Islandora and begin your mining journey.
+        </p>
+
+        <div class="auth-field">
+          <label for="registerEmail">Email Address</label>
+          <input
+            id="registerEmail"
+            type="email"
+            autocomplete="email"
+            placeholder="Enter your email"
+            required
+          >
+        </div>
+
+        <div class="auth-field">
+          <label for="registerPassword">Password</label>
+          <input
+            id="registerPassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            placeholder="Minimum 6 characters"
+            required
+          >
+        </div>
+
+        <div class="auth-field">
+          <label for="confirmPassword">Confirm Password</label>
+          <input
+            id="confirmPassword"
+            type="password"
+            autocomplete="new-password"
+            minlength="6"
+            placeholder="Enter password again"
+            required
+          >
+        </div>
+
+        <button class="auth-submit" id="registerButton" type="submit">
+          CREATE ACCOUNT
+        </button>
+
+      </form>
+
+      <p class="auth-error" id="authError" role="alert"></p>
+
+      <div class="auth-footer">
+        Secure account authentication powered by Firebase.
+      </div>
+
+    </div>
+
+  </section>
+
+  <!-- GAME DASHBOARD -->
+
+  <div class="game-shell" id="gameShell" hidden>
 
     <header class="topbar">
 
@@ -54,7 +339,7 @@
         <div class="resource gem-resource">
           <span class="resource-icon">💎</span>
           <span>
-            <b id="gemBalance">1,000</b>
+            <b id="gemBalance">0</b>
             <small>Gems</small>
           </span>
         </div>
@@ -80,11 +365,7 @@
 
     </header>
 
-    <!-- MAIN GAME -->
-
     <main class="game-layout" id="home">
-
-      <!-- ISLAND SIDEBAR -->
 
       <aside class="island-sidebar">
 
@@ -105,11 +386,7 @@
 
       </aside>
 
-      <!-- MAIN WORLD -->
-
       <section class="main-world">
-
-        <!-- ISLAND HERO -->
 
         <section class="island-hero" id="islandHero">
 
@@ -156,8 +433,6 @@
 
         </section>
 
-        <!-- MINING BOXES -->
-
         <section class="mining-section" id="mining">
 
           <div class="section-heading">
@@ -175,8 +450,6 @@
 
           <div class="box-grid" id="boxGrid"></div>
 
-          <!-- MINING STORAGE -->
-
           <div class="storage-panel" id="storagePanel">
 
             <div class="storage-content">
@@ -193,19 +466,15 @@
                   0.00 / 1,500 Coins
                 </span>
 
-                <span id="storagePercentage">
-                  0%
-                </span>
+                <span id="storagePercentage">0%</span>
 
               </div>
 
               <div class="storage-progress-track">
-
                 <div
                   class="storage-progress-fill"
                   id="storageProgressFill"
                 ></div>
-
               </div>
 
               <div
@@ -215,9 +484,7 @@
                 STORAGE FULL — Additional mining rewards will be lost.
               </div>
 
-              <small>
-                Storage capacity: 1,500 Coins
-              </small>
+              <small>Storage capacity: 1,500 Coins</small>
 
             </div>
 
@@ -237,8 +504,6 @@
       </section>
 
     </main>
-
-    <!-- BOTTOM NAVIGATION -->
 
     <nav class="bottom-nav">
 
