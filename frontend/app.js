@@ -3,6 +3,23 @@
   "use strict";
 
   // ==========================================
+  // FIREBASE AUTHENTICATION
+  // ==========================================
+
+  const firebaseConfig = window.APP_CONFIG?.FIREBASE;
+
+  if (!firebaseConfig || !firebaseConfig.apiKey) {
+    console.error("Firebase configuration is missing.");
+    return;
+  }
+
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+
+  const auth = firebase.auth();
+
+  // ==========================================
   // TELEGRAM MINI APP
   // ==========================================
 
@@ -12,6 +29,210 @@
     telegram.ready();
     telegram.expand();
   }
+
+  // ==========================================
+  // DOM HELPERS
+  // ==========================================
+
+  const $ = selector => document.querySelector(selector);
+
+  const authScreen = $("#authScreen");
+  const gameShell = $("#gameShell");
+  const authError = $("#authError");
+
+  let toastTimer = null;
+
+  // ==========================================
+  // AUTHENTICATION TABS
+  // ==========================================
+
+  function showLogin() {
+    $("#loginForm").hidden = false;
+    $("#registerForm").hidden = true;
+
+    $("#loginTab").classList.add("active");
+    $("#registerTab").classList.remove("active");
+
+    authError.textContent = "";
+  }
+
+  function showRegister() {
+    $("#loginForm").hidden = true;
+    $("#registerForm").hidden = false;
+
+    $("#loginTab").classList.remove("active");
+    $("#registerTab").classList.add("active");
+
+    authError.textContent = "";
+  }
+
+  $("#loginTab").addEventListener("click", showLogin);
+  $("#registerTab").addEventListener("click", showRegister);
+
+  // ==========================================
+  // AUTH ERROR MESSAGES
+  // ==========================================
+
+  function getAuthErrorMessage(error) {
+    const messages = {
+      "auth/email-already-in-use":
+        "This email is already registered. Please login.",
+
+      "auth/invalid-email":
+        "Please enter a valid email address.",
+
+      "auth/weak-password":
+        "Password must be at least 6 characters.",
+
+      "auth/user-not-found":
+        "No account found with this email.",
+
+      "auth/wrong-password":
+        "Incorrect password. Please try again.",
+
+      "auth/invalid-credential":
+        "Incorrect email or password.",
+
+      "auth/too-many-requests":
+        "Too many attempts. Please try again later.",
+
+      "auth/network-request-failed":
+        "Network error. Check your internet connection.",
+
+      "auth/operation-not-allowed":
+        "Email/Password login is not enabled in Firebase."
+    };
+
+    return messages[error.code] ||
+      "Something went wrong. Please try again.";
+  }
+
+  // ==========================================
+  // REGISTER
+  // ==========================================
+
+  $("#registerForm").addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const email = $("#registerEmail").value.trim();
+    const password = $("#registerPassword").value;
+    const confirmPassword = $("#confirmPassword").value;
+
+    const button = $("#registerButton");
+
+    authError.textContent = "";
+
+    if (password.length < 6) {
+      authError.textContent =
+        "Password must be at least 6 characters.";
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      authError.textContent =
+        "Passwords do not match.";
+      return;
+    }
+
+    button.disabled = true;
+    button.textContent = "CREATING ACCOUNT...";
+
+    try {
+      await auth.createUserWithEmailAndPassword(
+        email,
+        password
+      );
+
+      $("#registerForm").reset();
+
+    } catch (error) {
+      console.error("Registration error:", error);
+      authError.textContent = getAuthErrorMessage(error);
+
+    } finally {
+      button.disabled = false;
+      button.textContent = "CREATE ACCOUNT";
+    }
+  });
+
+  // ==========================================
+  // LOGIN
+  // ==========================================
+
+  $("#loginForm").addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const email = $("#loginEmail").value.trim();
+    const password = $("#loginPassword").value;
+
+    const button = $("#loginButton");
+
+    authError.textContent = "";
+
+    button.disabled = true;
+    button.textContent = "LOGGING IN...";
+
+    try {
+      await auth.signInWithEmailAndPassword(
+        email,
+        password
+      );
+
+      $("#loginForm").reset();
+
+    } catch (error) {
+      console.error("Login error:", error);
+      authError.textContent = getAuthErrorMessage(error);
+
+    } finally {
+      button.disabled = false;
+      button.textContent = "LOGIN";
+    }
+  });
+
+  // ==========================================
+  // LOGOUT
+  // ==========================================
+
+  $("#profileButton").addEventListener("click", async () => {
+    const confirmed = window.confirm(
+      "Are you sure you want to logout?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await auth.signOut();
+    } catch (error) {
+      console.error("Logout error:", error);
+      showToast("Unable to logout. Please try again.");
+    }
+  });
+
+  // ==========================================
+  // AUTH STATE
+  // ==========================================
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      authScreen.hidden = true;
+      gameShell.hidden = false;
+
+      $("#profileButton").title =
+        user.email || "Account";
+
+      console.info(
+        "Islandora user authenticated:",
+        user.uid
+      );
+
+    } else {
+      gameShell.hidden = true;
+      authScreen.hidden = false;
+
+      showLogin();
+    }
+  });
 
   // ==========================================
   // ISLAND DATA
@@ -128,14 +349,10 @@
   const STORAGE_CAP = 1500;
 
   let selectedIsland = 0;
-  let toastTimer = null;
 
   const boxCounts = Array(10).fill(0);
 
-  // This remains zero until the secure backend is connected.
   let pendingCoins = 0;
-
-  const $ = selector => document.querySelector(selector);
 
   // ==========================================
   // IMAGE PATHS
@@ -173,7 +390,6 @@
   // ==========================================
 
   function isUnlocked(index) {
-    // Actual account unlock status will come from backend.
     return index === 0;
   }
 
@@ -197,19 +413,15 @@
         >
 
           <span class="island-thumb">
-
             <img
               src="${islandImagePath(index)}"
               alt="${island.name}"
               loading="lazy"
             >
-
           </span>
 
           <span class="island-details">
-
             <strong>Island ${index + 1}</strong>
-
             <span>
               ${
                 unlocked
@@ -217,7 +429,6 @@
                   : "Unlock after completing Island " + index
               }
             </span>
-
           </span>
 
           <span class="island-lock">
@@ -261,7 +472,6 @@
     );
 
     renderIslandList();
-
     renderBoxes();
   }
 
@@ -275,17 +485,13 @@
     if (!isUnlocked(selectedIsland)) {
       grid.innerHTML = `
         <div class="locked-island-message">
-
-          <div style="font-size:48px">
-            🔒
-          </div>
+          <div style="font-size:48px">🔒</div>
 
           <h3>${islands[selectedIsland].name}</h3>
 
           <p>
             Complete the previous island to unlock this island.
           </p>
-
         </div>
       `;
 
@@ -296,7 +502,6 @@
 
     grid.innerHTML = prices.map((price, index) => {
       const count = boxCounts[index];
-
       const maxed = count >= 10;
 
       return `
@@ -307,13 +512,11 @@
           </div>
 
           <div class="chest-art">
-
             <img
               src="${chestImagePath(index)}"
               alt="Treasure Chest ${index + 1}"
               loading="lazy"
             >
-
           </div>
 
           <div class="box-cost">
@@ -386,7 +589,6 @@
       current >= STORAGE_CAP
     );
 
-    // Claim will be enabled only after secure backend integration.
     $("#claimButton").disabled = true;
   }
 
@@ -450,16 +652,6 @@
   });
 
   // ==========================================
-  // PROFILE
-  // ==========================================
-
-  $("#profileButton").addEventListener("click", () => {
-    showToast(
-      "Profile will be available after account integration."
-    );
-  });
-
-  // ==========================================
   // BOTTOM NAVIGATION
   // ==========================================
 
@@ -488,11 +680,10 @@
   });
 
   // ==========================================
-  // INITIALIZE
+  // INITIALIZE GAME
   // ==========================================
 
   renderIsland();
-
   updateStorage(0);
 
   console.info(
