@@ -6,108 +6,272 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#05243c">
   <meta name="description" content="Islandora - Fantasy Mining World">
+
   <title>Islandora - Fantasy Mining World</title>
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+
+  <link
+    href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap"
+    rel="stylesheet"
+  >
+
   <link rel="stylesheet" href="styles.css">
+
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <script src="config.js"></script>
   <script src="app.js" defer></script>
 </head>
+
 <body>
+
   <div class="game-shell">
 
+    <!-- HEADER -->
+
     <header class="topbar">
+
       <a class="brand" href="#home">
         <span class="brand-gem">◆</span>
-        <span>ISLAND<span class="brand-gold">ORA</span>
+
+        <span>
+          ISLAND<span class="brand-gold">ORA</span>
           <small>FANTASY MINING WORLD</small>
         </span>
       </a>
 
       <div class="resources">
+
         <div class="resource coin-resource">
           <span class="resource-icon">🪙</span>
-          <span><b id="coinBalance">0</b><small>Coins</small></span>
+          <span>
+            <b id="coinBalance">0</b>
+            <small>Coins</small>
+          </span>
         </div>
+
         <div class="resource gem-resource">
           <span class="resource-icon">💎</span>
-          <span><b id="gemBalance">1,000</b><small>Gems</small></span>
+          <span>
+            <b id="gemBalance">1,000</b>
+            <small>Gems</small>
+          </span>
         </div>
+
         <div class="resource energy-resource">
           <span class="resource-icon">⚡</span>
-          <span><b>5/5</b><small>Energy</small></span>
+          <span>
+            <b>5/5</b>
+            <small>Energy</small>
+          </span>
         </div>
+
       </div>
 
-      <button class="profile-button" id="profileButton" aria-label="Profile">👤</button>
+      <button
+        class="profile-button"
+        id="profileButton"
+        aria-label="Profile"
+        type="button"
+      >
+        👤
+      </button>
+
     </header>
+
+    <!-- MAIN GAME -->
 
     <main class="game-layout" id="home">
 
+      <!-- ISLAND SIDEBAR -->
+
       <aside class="island-sidebar">
+
         <div class="sidebar-heading">
           <span>🌴 YOUR ISLANDS</span>
           <b>10 ISLANDS</b>
         </div>
+
         <div class="island-list" id="islandList"></div>
-        <button class="view-islands" id="viewAllIslands">▦ &nbsp; View All Islands　»</button>
+
+        <button
+          class="view-islands"
+          id="viewAllIslands"
+          type="button"
+        >
+          ▦ &nbsp; View All Islands »
+        </button>
+
       </aside>
 
+      <!-- MAIN WORLD -->
+
       <section class="main-world">
+
+        <!-- ISLAND HERO -->
+
         <section class="island-hero" id="islandHero">
+
           <div class="hero-overlay"></div>
+
           <div class="island-title-panel">
             <span class="island-kicker">YOUR MINING WORLD</span>
+
             <h1 id="islandTitle">Island 1</h1>
-            <span class="island-subtitle" id="islandSubtitle">Emerald Haven</span>
-            <p id="islandDescription">Begin your mining journey on this beautiful island!</p>
+
+            <span class="island-subtitle" id="islandSubtitle">
+              Emerald Haven
+            </span>
+
+            <p id="islandDescription">
+              Begin your mining journey on this beautiful island!
+            </p>
           </div>
 
-          <div class="island-status" id="islandStatus">✓ UNLOCKED</div>
+          <div class="island-status" id="islandStatus">
+            ✓ UNLOCKED
+          </div>
 
           <div class="island-stats">
+
             <h3>🏝 Island Stats</h3>
-            <div><span>⛏ Mining Rate</span><b id="islandRate">0 Coins/day</b></div>
-            <div><span>💎 Unlock Cost</span><b id="islandCost">500 Gems</b></div>
-            <div><span>📦 Box Limit</span><b>10 Boxes</b></div>
+
+            <div>
+              <span>⛏ Mining Rate</span>
+              <b id="islandRate">0 Coins/day</b>
+            </div>
+
+            <div>
+              <span>💎 Unlock Cost</span>
+              <b id="islandCost">500 Gems</b>
+            </div>
+
+            <div>
+              <span>📦 Box Limit</span>
+              <b>10 Boxes</b>
+            </div>
+
           </div>
+
         </section>
 
+        <!-- MINING BOXES -->
+
         <section class="mining-section" id="mining">
+
           <div class="section-heading">
+
             <div>
               <span class="section-kicker">EXPLORE & EARN</span>
               <h2>⛏ Mining Boxes <span>(10)</span></h2>
             </div>
-            <div class="storage-chip">📦 <span id="storageAmount">0.00</span> Coins</div>
+
+            <div class="storage-chip">
+              📦 <span id="storageAmount">0.00</span> Coins
+            </div>
+
           </div>
 
           <div class="box-grid" id="boxGrid"></div>
 
-          <div class="storage-panel">
-            <div>
+          <!-- MINING STORAGE -->
+
+          <div class="storage-panel" id="storagePanel">
+
+            <div class="storage-content">
+
               <span class="section-kicker">MINING STORAGE</span>
+
               <h3>💰 Pending Coins</h3>
+
               <strong id="pendingCoins">0.00</strong>
-              <small>Claim becomes available at 5 Coins</small>
+
+              <div class="storage-progress-info">
+
+                <span id="storageProgressText">
+                  0.00 / 1,500 Coins
+                </span>
+
+                <span id="storagePercentage">
+                  0%
+                </span>
+
+              </div>
+
+              <div class="storage-progress-track">
+
+                <div
+                  class="storage-progress-fill"
+                  id="storageProgressFill"
+                ></div>
+
+              </div>
+
+              <div
+                class="storage-full-message"
+                id="storageFullMessage"
+              >
+                STORAGE FULL — Additional mining rewards will be lost.
+              </div>
+
+              <small>
+                Storage capacity: 1,500 Coins
+              </small>
+
             </div>
-            <button class="claim-button" id="claimButton" disabled>CLAIM COINS</button>
+
+            <button
+              class="claim-button"
+              id="claimButton"
+              type="button"
+              disabled
+            >
+              CLAIM COINS
+            </button>
+
           </div>
+
         </section>
+
       </section>
+
     </main>
 
+    <!-- BOTTOM NAVIGATION -->
+
     <nav class="bottom-nav">
-      <a class="nav-item active" href="#home"><span>⌂</span><small>Home</small></a>
-      <a class="nav-item" href="#mining"><span>⚒</span><small>Mining</small></a>
-      <a class="nav-item" href="#spin"><span>◉</span><small>Spin</small></a>
-      <a class="nav-item" href="#referral"><span>♧</span><small>Referral</small></a>
-      <a class="nav-item" href="#profile"><span>♙</span><small>Profile</small></a>
+
+      <a class="nav-item active" href="#home">
+        <span>⌂</span>
+        <small>Home</small>
+      </a>
+
+      <a class="nav-item" href="#mining">
+        <span>⚒</span>
+        <small>Mining</small>
+      </a>
+
+      <a class="nav-item" href="#spin">
+        <span>◉</span>
+        <small>Spin</small>
+      </a>
+
+      <a class="nav-item" href="#referral">
+        <span>♧</span>
+        <small>Referral</small>
+      </a>
+
+      <a class="nav-item" href="#profile">
+        <span>♙</span>
+        <small>Profile</small>
+      </a>
+
     </nav>
 
     <div class="toast" id="toast" role="status"></div>
+
   </div>
+
 </body>
 </html>
