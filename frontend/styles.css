@@ -942,3 +942,159 @@ button { cursor: pointer; }
     font-size: 19px;
   }
 }
+
+/* =====================================
+   ISLANDORA - CLEAN ISLAND HERO
+===================================== */
+
+/* Remove all text panels from island artwork */
+.island-title-panel,
+.island-stats {
+  display: none !important;
+}
+
+/* Keep island artwork clean */
+.island-hero {
+  position: relative;
+  overflow: hidden;
+}
+
+/* =====================================
+   FIVE CHESTS PER ROW
+===================================== */
+
+.box-grid {
+  display: grid !important;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  width: 100%;
+}
+
+.mining-box {
+  min-width: 0 !important;
+  padding: 8px 4px !important;
+  overflow: hidden;
+  text-align: center;
+}
+
+.box-name {
+  font-size: 11px !important;
+}
+
+.chest-art {
+  height: 75px !important;
+  padding: 3px !important;
+}
+
+.chest-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.box-cost {
+  font-size: 12px !important;
+}
+
+.box-rate {
+  font-size: 9px !important;
+}
+
+.open-button {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 2px !important;
+  font-size: 10px !important;
+}
+
+.box-count {
+  font-size: 8px !important;
+}
+
+/* =====================================
+   MINING STORAGE PROGRESS BAR
+===================================== */
+
+.storage-panel {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.storage-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  margin-bottom: 7px;
+  color: #c5eafa;
+  font-size: 11px;
+}
+
+.storage-progress-track {
+  width: 100%;
+  height: 13px;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #031c32;
+  border: 1px solid #147b9a;
+  box-shadow: inset 0 2px 5px #0008;
+}
+
+.storage-progress-fill {
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    #00c9e8,
+    #00f0a0,
+    #ffe45c
+  );
+  box-shadow: 0 0 12px #00e5ff88;
+  transition: width .4s ease;
+}
+
+.storage-full-message {
+  display: none;
+  margin-top: 8px;
+  color: #ffdf55;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.storage-panel.storage-full .storage-full-message {
+  display: block;
+}
+
+/* Smaller screens */
+@media (max-width: 700px) {
+  .box-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  .chest-art {
+    height: 65px !important;
+  }
+
+  .mining-box {
+    padding: 7px 3px !important;
+  }
+
+  .box-name {
+    font-size: 9px !important;
+  }
+
+  .box-cost {
+    font-size: 10px !important;
+  }
+
+  .box-rate {
+    font-size: 8px !important;
+  }
+
+  .open-button {
+    font-size: 9px !important;
+  }
+}
