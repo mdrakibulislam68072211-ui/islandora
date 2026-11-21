@@ -2,69 +2,64 @@
 (() => {
   "use strict";
 
-  const config = window.APP_CONFIG || {};
   const telegram = window.Telegram?.WebApp;
-
   if (telegram) {
     telegram.ready();
     telegram.expand();
   }
 
-  const islandData = [
-    { name: "Emerald Haven", subtitle: "Starter Island", description: "Begin your mining journey on this peaceful island!", cost: 500, theme: "emerald", art: "🏝️" },
-    { name: "Frozen Kingdom", subtitle: "Ice Island", description: "Discover the frozen treasures of the northern seas.", cost: 1000, theme: "ice", art: "❄️" },
-    { name: "Volcano Valley", subtitle: "Fire Island", description: "Explore the fiery land of ancient volcanoes.", cost: 2000, theme: "volcano", art: "🌋" },
-    { name: "Crystal Paradise", subtitle: "Crystal Island", description: "A mysterious island filled with glowing crystals.", cost: 4000, theme: "crystal", art: "💎" },
-    { name: "Golden Oasis", subtitle: "Golden Island", description: "Find the golden treasures hidden in the desert.", cost: 8000, theme: "gold", art: "🏜️" },
-    { name: "Mystic Forest", subtitle: "Forest Island", description: "Enter an enchanted forest full of hidden riches.", cost: 16000, theme: "forest", art: "🌳" },
-    { name: "Sky Kingdom", subtitle: "Cloud Island", description: "Explore the magical islands floating above the clouds.", cost: 32000, theme: "sky", art: "☁️" },
-    { name: "Coral Paradise", subtitle: "Ocean Island", description: "Discover the secrets beneath the deep blue ocean.", cost: 64000, theme: "ocean", art: "🐠" },
-    { name: "Dragon Realm", subtitle: "Dragon Island", description: "A legendary land guarded by ancient dragons.", cost: 128000, theme: "dragon", art: "🐉" },
-    { name: "Celestial World", subtitle: "Final Island", description: "Reach the ultimate world of legendary treasures.", cost: 256000, theme: "celestial", art: "✨" }
+  const islands = [
+    ["Emerald Haven", "Starter Island", "Begin your mining journey on this peaceful island!", 500],
+    ["Frozen Kingdom", "Ice Island", "Discover the frozen treasures of the northern seas.", 1000],
+    ["Volcano Valley", "Fire Island", "Explore the fiery land of ancient volcanoes.", 2000],
+    ["Crystal Paradise", "Crystal Island", "A mysterious island filled with glowing crystals.", 4000],
+    ["Golden Oasis", "Golden Island", "Find the golden treasures hidden in the desert.", 8000],
+    ["Mystic Forest", "Forest Island", "Enter an enchanted forest full of hidden riches.", 16000],
+    ["Sky Kingdom", "Cloud Island", "Explore magical islands floating above the clouds.", 32000],
+    ["Coral Paradise", "Ocean Island", "Discover secrets beneath the deep blue ocean.", 64000],
+    ["Dragon Realm", "Dragon Island", "A legendary land guarded by ancient dragons.", 128000],
+    ["Celestial World", "Final Island", "Reach the ultimate world of legendary treasures.", 256000]
   ];
 
-  const firstIslandPrices = [10, 20, 30, 50, 100, 150, 200, 300, 500, 1000];
-  const firstIslandRates = [2, 4, 6, 10, 20, 30, 40, 50, 100, 200];
+  const prices = [10, 20, 30, 50, 100, 150, 200, 300, 500, 1000];
+  const rates = [2, 4, 6, 10, 20, 30, 40, 50, 100, 200];
 
   let selectedIsland = 0;
-  let previewToastTimer;
-  let boxCounts = Array(10).fill(0);
+  let toastTimer;
 
-  const $ = (selector) => document.querySelector(selector);
+  const $ = selector => document.querySelector(selector);
+  const boxCounts = Array(10).fill(0);
 
-  function toast(message) {
+  function showToast(message) {
     const element = $("#toast");
-    if (!element) return;
-
     element.textContent = message;
     element.classList.add("show");
-
-    clearTimeout(previewToastTimer);
-    previewToastTimer = setTimeout(() => {
-      element.classList.remove("show");
-    }, 2600);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => element.classList.remove("show"), 2600);
   }
 
-  function isIslandUnlocked(index) {
-    // Preview: only Island 1 is unlocked until account/backend data is connected.
+  function imagePath(folder, number) {
+    return `assets/${folder}/${folder === "islands" ? "island" : "chest"}-${number}.png`;
+  }
+
+  function isUnlocked(index) {
+    // Preview only: actual unlock status will come from the secure backend.
     return index === 0;
   }
 
   function renderIslandList() {
-    const list = $("#islandList");
-    if (!list) return;
-
-    list.innerHTML = islandData.map((island, index) => {
-      const unlocked = isIslandUnlocked(index);
-      const active = selectedIsland === index;
-
+    $("#islandList").innerHTML = islands.map((island, index) => {
+      const unlocked = isUnlocked(index);
       return `
-        <button class="island-card ${active ? "active" : ""} ${unlocked ? "" : "locked"}"
-          data-island="${index}" ${unlocked ? "" : 'aria-label="Locked island"'}>
-          <span class="island-thumb">${island.art}</span>
+        <button class="island-card ${selectedIsland === index ? "active" : ""} ${unlocked ? "" : "locked"}"
+          data-island="${index}">
+          <span class="island-thumb">
+            <img src="${imagePath("islands", index + 1)}"
+                 alt="${island[0]}" loading="lazy">
+          </span>
           <span class="island-details">
             <strong>Island ${index + 1}</strong>
-            <span>${unlocked ? island.subtitle : "Unlock after completing Island " + index}</span>
+            <span>${unlocked ? island[1] : "Unlock after completing Island " + index}</span>
           </span>
           <span class="island-lock">${unlocked ? "›" : "🔒"}</span>
         </button>
@@ -73,24 +68,19 @@
   }
 
   function renderIsland() {
-    const island = islandData[selectedIsland];
+    const island = islands[selectedIsland];
+    const hero = $("#islandHero");
 
     $("#islandTitle").textContent = `Island ${selectedIsland + 1}`;
-    $("#islandSubtitle").textContent = island.name;
-    $("#islandDescription").textContent = island.description;
-    $("#islandCost").textContent = island.cost.toLocaleString() + " Gems";
-    $("#islandStatus").textContent = isIslandUnlocked(selectedIsland)
-      ? "✓ UNLOCKED"
-      : "🔒 LOCKED";
+    $("#islandSubtitle").textContent = island[0];
+    $("#islandDescription").textContent = island[2];
+    $("#islandCost").textContent = island[3].toLocaleString() + " Gems";
+    $("#islandStatus").textContent = isUnlocked(selectedIsland) ? "✓ UNLOCKED" : "🔒 LOCKED";
 
-    const totalDailyRate = selectedIsland === 0
-      ? firstIslandRates.reduce((sum, rate, index) => sum + rate * boxCounts[index], 0)
-      : 0;
-
-    $("#islandRate").textContent = totalDailyRate.toLocaleString() + " Coins/day";
-
-    const hero = $("#islandHero");
-    hero.dataset.theme = island.theme;
+    hero.style.setProperty(
+      "--island-image",
+      `url("${imagePath("islands", selectedIsland + 1)}")`
+    );
 
     renderIslandList();
     renderBoxes();
@@ -98,30 +88,31 @@
 
   function renderBoxes() {
     const grid = $("#boxGrid");
-    if (!grid) return;
 
     if (selectedIsland !== 0) {
       grid.innerHTML = `
         <div class="locked-island-message">
           <div style="font-size:48px">🔒</div>
-          <h3>${islandData[selectedIsland].name}</h3>
-          <p>Complete the previous island and unlock this island to access its mining boxes.</p>
-        </div>
-      `;
+          <h3>${islands[selectedIsland][0]}</h3>
+          <p>Complete the previous island to unlock this island.</p>
+        </div>`;
       return;
     }
 
-    grid.innerHTML = firstIslandPrices.map((price, index) => {
+    grid.innerHTML = prices.map((price, index) => {
       const count = boxCounts[index];
       const maxed = count >= 10;
 
       return `
         <article class="mining-box ${maxed ? "maxed" : ""}">
           <div class="box-name">Box #${index + 1}</div>
-          <div class="chest-art">${["🟢","🔵","🟣","🟡","🔴","🟢","🔷","🟣","🟠","❤️"][index]}</div>
+          <div class="chest-art">
+            <img src="${imagePath("chests", index + 1)}"
+                 alt="Treasure Chest ${index + 1}" loading="lazy">
+          </div>
           <div class="box-cost">💎 ${price.toLocaleString()}</div>
-          <div class="box-rate">⛏ +${firstIslandRates[index]} / day</div>
-          <button class="open-button" data-box="${index}" ${maxed ? "disabled" : ""}>
+          <div class="box-rate">⛏ +${rates[index]} / day</div>
+          <button class="open-button" data-box="${index}" disabled>
             ${maxed ? "MAX" : "Open"}
           </button>
           <div class="box-count">${count}/10 Opened</div>
@@ -129,26 +120,27 @@
       `;
     }).join("");
 
-    $("#islandRate").textContent =
-      firstIslandRates.reduce((sum, rate, index) => sum + rate * boxCounts[index], 0) +
-      " Coins/day";
+    const totalRate = rates.reduce(
+      (sum, rate, index) => sum + rate * boxCounts[index], 0
+    );
+
+    $("#islandRate").textContent = totalRate.toLocaleString() + " Coins/day";
   }
 
   function updateStorage() {
-    // Preview only. Real storage will be calculated securely by the Worker.
     $("#pendingCoins").textContent = "0.00";
     $("#storageAmount").textContent = "0.00";
     $("#claimButton").disabled = true;
   }
 
-  $("#islandList").addEventListener("click", (event) => {
+  $("#islandList").addEventListener("click", event => {
     const card = event.target.closest("[data-island]");
     if (!card) return;
 
     const index = Number(card.dataset.island);
 
-    if (!isIslandUnlocked(index)) {
-      toast("🔒 Complete the previous island to unlock this island.");
+    if (!isUnlocked(index)) {
+      showToast("🔒 Complete the previous island to unlock this island.");
       return;
     }
 
@@ -156,51 +148,40 @@
     renderIsland();
   });
 
-  $("#boxGrid").addEventListener("click", (event) => {
+  $("#boxGrid").addEventListener("click", event => {
     const button = event.target.closest("[data-box]");
     if (!button || button.disabled) return;
-
-    toast("Mining will be activated after the secure backend is connected.");
+    showToast("Mining will be activated after secure backend integration.");
   });
 
   $("#viewAllIslands").addEventListener("click", () => {
-    toast("Explore all 10 islands from the island list.");
     $("#islandList").scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
 
   $("#claimButton").addEventListener("click", () => {
-    toast("Coin claiming will be available after backend integration.");
+    showToast("Coin claiming will be available after backend integration.");
   });
 
   $("#profileButton").addEventListener("click", () => {
-    toast("Profile will be available after account integration.");
+    showToast("Profile will be available after account integration.");
   });
 
-  document.querySelectorAll(".nav-item").forEach((item) => {
-    item.addEventListener("click", (event) => {
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.addEventListener("click", event => {
       event.preventDefault();
-
-      document.querySelectorAll(".nav-item").forEach((nav) => {
-        nav.classList.remove("active");
-      });
-
+      document.querySelectorAll(".nav-item").forEach(nav => nav.classList.remove("active"));
       item.classList.add("active");
 
-      const section = item.getAttribute("href");
-
-      if (section === "#home" || section === "#mining") {
-        document.querySelector(section)?.scrollIntoView({
-          behavior: "smooth",
-          block: "start"
-        });
+      const target = item.getAttribute("href");
+      if (target === "#home" || target === "#mining") {
+        document.querySelector(target)?.scrollIntoView({ behavior: "smooth" });
       } else {
-        toast(item.textContent.trim() + " will be available soon.");
+        showToast(item.textContent.trim() + " will be available soon.");
       }
     });
   });
 
   renderIsland();
   updateStorage();
-
-  console.info("Islandora game dashboard preview initialized.");
+  console.info("Islandora image dashboard initialized.");
 })();
