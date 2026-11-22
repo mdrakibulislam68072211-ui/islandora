@@ -382,8 +382,12 @@
       gameShell.hidden = true;
       authScreen.hidden = false;
 
-      showLogin();
-    }
+      if (new URLSearchParams(window.location.search).has("ref")) {
+  showRegister();
+} else {
+  showLogin();
+}
+    
   });
 
   // ==========================================
