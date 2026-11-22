@@ -3,7 +3,7 @@ window.APP_CONFIG = {
   APP_NAME: "Islandora",
 
   // Cloudflare Worker API address
-  API_BASE_URL: "https://YOUR-WORKER.YOUR-SUBDOMAIN.workers.dev",
+  API_BASE_URL: "https://islandora-api.mdrakibulislam68072211.workers.dev",
 
   // Firebase Authentication configuration
   FIREBASE: {
