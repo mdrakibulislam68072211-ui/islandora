@@ -219,26 +219,22 @@
     profilePanel.hidden = true;
   }
 
-  // Open profile using top-right profile icon.
   $("#profileButton").addEventListener(
     "click",
     openProfilePanel
   );
 
-  // Close profile using close button.
   $("#closeProfileButton").addEventListener(
     "click",
     closeProfilePanel
   );
 
-  // Close profile by clicking outside the card.
   profilePanel.addEventListener("click", event => {
     if (event.target === profilePanel) {
       closeProfilePanel();
     }
   });
 
-  // Close profile using Escape key.
   document.addEventListener("keydown", event => {
     if (event.key === "Escape" && !profilePanel.hidden) {
       closeProfilePanel();
@@ -277,7 +273,7 @@
       logoutButton.textContent = "↪ LOG OUT";
     }
   });
-  
+
   // ==========================================
   // CLOUDFLARE WORKER API
   // ==========================================
@@ -322,7 +318,7 @@
   // AUTH STATE
   // ==========================================
 
-  auth.onAuthStateChanged(user => {
+  auth.onAuthStateChanged(async user => {
     if (user) {
       authScreen.hidden = true;
       gameShell.hidden = false;
@@ -341,12 +337,46 @@
           ? "Active · Email verified"
           : "Active · Email not verified";
 
+      try {
+        if (backendSyncedUid !== user.uid) {
+          const backendUser =
+            await syncUserWithBackend(user);
+
+          backendSyncedUid = user.uid;
+
+          console.info(
+            "Islandora account synchronized with D1:",
+            backendUser
+          );
+
+          $("#profileStatus").textContent =
+            user.emailVerified
+              ? "Active · Email verified"
+              : "Active · Email not verified";
+        }
+
+      } catch (error) {
+        console.error(
+          "Backend synchronization error:",
+          error
+        );
+
+        $("#profileStatus").textContent =
+          "Active · Backend sync pending";
+
+        showToast(
+          "Server connection failed. Please refresh and try again."
+        );
+      }
+
       console.info(
         "Islandora user authenticated:",
         user.uid
       );
 
     } else {
+      backendSyncedUid = null;
+
       closeProfilePanel();
 
       gameShell.hidden = true;
