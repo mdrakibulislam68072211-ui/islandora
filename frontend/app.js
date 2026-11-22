@@ -277,6 +277,46 @@
       logoutButton.textContent = "↪ LOG OUT";
     }
   });
+  
+  // ==========================================
+  // CLOUDFLARE WORKER API
+  // ==========================================
+
+  const API_BASE_URL =
+    window.APP_CONFIG?.API_BASE_URL?.replace(/\/+$/, "");
+
+  let backendSyncedUid = null;
+
+  async function syncUserWithBackend(user) {
+    if (!API_BASE_URL) {
+      throw new Error("Backend API URL is missing.");
+    }
+
+    const idToken = await user.getIdToken();
+
+    const result = await fetch(
+      `${API_BASE_URL}/api/auth/sync`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`
+        }
+      }
+    );
+
+    const data = await result.json();
+
+    if (!result.ok || !data.success) {
+      throw new Error(
+        data.message ||
+        data.error ||
+        "Backend synchronization failed."
+      );
+    }
+
+    return data.user;
+  }
 
   // ==========================================
   // AUTH STATE
