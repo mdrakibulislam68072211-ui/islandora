@@ -2,10 +2,12 @@
 window.APP_CONFIG = {
   APP_NAME: "Islandora",
 
-  // Cloudflare Worker API address
-  API_BASE_URL: "https://islandora-api.mdrakibulislam68072211.workers.dev",
+  API_BASE_URL:
+    "https://islandora-api.mdrakibulislam68072211.workers.dev",
 
-  // Firebase Authentication configuration
+  REFERRAL_API_URL:
+    "https://islandora-referral-api.mdrakibulislam68072211.workers.dev",
+
   FIREBASE: {
     apiKey: "AIzaSyByOdbroiBMxmYcKwEQohbdoM2jhTNyRLE",
     authDomain: "islandora-c1f7b.firebaseapp.com",
@@ -16,12 +18,10 @@ window.APP_CONFIG = {
     measurementId: "G-9XT0X4XDKQ"
   },
 
-  // Telegram Mini App configuration
   TELEGRAM: {
     BOT_USERNAME: "YOUR_BOT_USERNAME"
   },
 
-  // Application settings
   SETTINGS: {
     DEFAULT_LANGUAGE: "en",
     CURRENCY_NAME: "Coins",
