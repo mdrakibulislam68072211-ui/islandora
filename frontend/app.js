@@ -3,7 +3,7 @@
   "use strict";
 
   // ==========================================
-  // FIREBASE AUTHENTICATION
+  // FIREBASE INITIALIZATION
   // ==========================================
 
   const firebaseConfig = window.APP_CONFIG?.FIREBASE;
@@ -13,11 +13,23 @@
     return;
   }
 
+  if (!window.firebase || !firebase.auth) {
+    console.error("Firebase SDK is not loaded.");
+    return;
+  }
+
   if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
 
   const auth = firebase.auth();
+
+  const persistenceReady = auth.setPersistence(
+    firebase.auth.Auth.Persistence.LOCAL
+  ).catch(error => {
+    console.error("Firebase persistence error:", error);
+    throw error;
+  });
 
   // ==========================================
   // TELEGRAM MINI APP
@@ -39,35 +51,84 @@
   const authScreen = $("#authScreen");
   const gameShell = $("#gameShell");
   const authError = $("#authError");
+  const profilePanel = $("#profilePanel");
 
   let toastTimer = null;
+  let backendSyncedUid = null;
 
   // ==========================================
-  // AUTHENTICATION TABS
+  // REQUIRED DOM CHECK
   // ==========================================
 
-  function showLogin() {
-    $("#loginForm").hidden = false;
-    $("#registerForm").hidden = true;
+  const requiredElements = [
+    "#authScreen",
+    "#gameShell",
+    "#authError",
+    "#loginForm",
+    "#registerForm",
+    "#loginEmail",
+    "#loginPassword",
+    "#loginButton",
+    "#registerEmail",
+    "#registerPassword",
+    "#confirmPassword",
+    "#registerButton",
+    "#loginTab",
+    "#registerTab",
+    "#profilePanel",
+    "#profileButton",
+    "#closeProfileButton",
+    "#logoutButton",
+    "#islandList",
+    "#islandHero",
+    "#islandTitle",
+    "#islandSubtitle",
+    "#islandDescription",
+    "#islandCost",
+    "#islandStatus",
+    "#boxGrid",
+    "#islandRate",
+    "#viewAllIslands",
+    "#claimButton",
+    "#pendingCoins",
+    "#storageAmount",
+    "#storageProgressText",
+    "#storagePercentage",
+    "#storageProgressFill",
+    "#storagePanel"
+  ];
 
-    $("#loginTab").classList.add("active");
-    $("#registerTab").classList.remove("active");
+  const missingElements = requiredElements.filter(
+    selector => !$(selector)
+  );
 
-    authError.textContent = "";
+  if (missingElements.length) {
+    console.error(
+      "Islandora HTML elements are missing:",
+      missingElements
+    );
+
+    return;
   }
 
-  function showRegister() {
-    $("#loginForm").hidden = true;
-    $("#registerForm").hidden = false;
+  // ==========================================
+  // TOAST
+  // ==========================================
 
-    $("#loginTab").classList.remove("active");
-    $("#registerTab").classList.add("active");
+  function showToast(message) {
+    const element = $("#toast");
 
-    authError.textContent = "";
+    if (!element) return;
+
+    element.textContent = message;
+    element.classList.add("show");
+
+    clearTimeout(toastTimer);
+
+    toastTimer = setTimeout(() => {
+      element.classList.remove("show");
+    }, 2600);
   }
-
-  $("#loginTab").addEventListener("click", showLogin);
-  $("#registerTab").addEventListener("click", showRegister);
 
   // ==========================================
   // AUTH ERROR MESSAGES
@@ -100,107 +161,163 @@
         "Network error. Check your internet connection.",
 
       "auth/operation-not-allowed":
-        "Email/Password login is not enabled in Firebase."
+        "Email/Password login is not enabled in Firebase.",
+
+      "auth/invalid-api-key":
+        "Firebase API configuration is invalid.",
+
+      "auth/app-not-authorized":
+        "This website is not authorized in Firebase."
     };
 
     return messages[error.code] ||
+      error.message ||
       "Something went wrong. Please try again.";
   }
+
+  // ==========================================
+  // AUTHENTICATION TABS
+  // ==========================================
+
+  function showLogin() {
+    $("#loginForm").hidden = false;
+    $("#registerForm").hidden = true;
+
+    $("#loginTab").classList.add("active");
+    $("#registerTab").classList.remove("active");
+
+    authError.textContent = "";
+  }
+
+  function showRegister() {
+    $("#loginForm").hidden = true;
+    $("#registerForm").hidden = false;
+
+    $("#loginTab").classList.remove("active");
+    $("#registerTab").classList.add("active");
+
+    authError.textContent = "";
+  }
+
+  $("#loginTab").addEventListener("click", showLogin);
+  $("#registerTab").addEventListener("click", showRegister);
 
   // ==========================================
   // REGISTER
   // ==========================================
 
-  $("#registerForm").addEventListener("submit", async event => {
-    event.preventDefault();
+  $("#registerForm").addEventListener(
+    "submit",
+    async event => {
+      event.preventDefault();
 
-    const email = $("#registerEmail").value.trim();
-    const password = $("#registerPassword").value;
-    const confirmPassword = $("#confirmPassword").value;
+      const email = $("#registerEmail").value.trim();
+      const password = $("#registerPassword").value;
+      const confirmPassword = $("#confirmPassword").value;
+      const button = $("#registerButton");
 
-    const button = $("#registerButton");
+      authError.textContent = "";
 
-    authError.textContent = "";
+      if (!email) {
+        authError.textContent = "Please enter your email.";
+        return;
+      }
 
-    if (password.length < 6) {
-      authError.textContent =
-        "Password must be at least 6 characters.";
-      return;
+      if (password.length < 6) {
+        authError.textContent =
+          "Password must be at least 6 characters.";
+        return;
+      }
+
+      if (password !== confirmPassword) {
+        authError.textContent = "Passwords do not match.";
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = "CREATING ACCOUNT...";
+
+      try {
+        await persistenceReady;
+
+        await auth.createUserWithEmailAndPassword(
+          email,
+          password
+        );
+
+        $("#registerForm").reset();
+
+      } catch (error) {
+        console.error("Registration error:", error);
+
+        authError.textContent =
+          getAuthErrorMessage(error);
+
+      } finally {
+        button.disabled = false;
+        button.textContent = "CREATE ACCOUNT";
+      }
     }
-
-    if (password !== confirmPassword) {
-      authError.textContent =
-        "Passwords do not match.";
-      return;
-    }
-
-    button.disabled = true;
-    button.textContent = "CREATING ACCOUNT...";
-
-    try {
-      await auth.createUserWithEmailAndPassword(
-        email,
-        password
-      );
-
-      $("#registerForm").reset();
-
-    } catch (error) {
-      console.error("Registration error:", error);
-      authError.textContent = getAuthErrorMessage(error);
-
-    } finally {
-      button.disabled = false;
-      button.textContent = "CREATE ACCOUNT";
-    }
-  });
+  );
 
   // ==========================================
   // LOGIN
   // ==========================================
 
-  $("#loginForm").addEventListener("submit", async event => {
-    event.preventDefault();
+  $("#loginForm").addEventListener(
+    "submit",
+    async event => {
+      event.preventDefault();
 
-    const email = $("#loginEmail").value.trim();
-    const password = $("#loginPassword").value;
+      const email = $("#loginEmail").value.trim();
+      const password = $("#loginPassword").value;
+      const button = $("#loginButton");
 
-    const button = $("#loginButton");
+      authError.textContent = "";
 
-    authError.textContent = "";
+      if (!email || !password) {
+        authError.textContent =
+          "Please enter your email and password.";
+        return;
+      }
 
-    button.disabled = true;
-    button.textContent = "LOGGING IN...";
+      button.disabled = true;
+      button.textContent = "LOGGING IN...";
 
-    try {
-      await auth.signInWithEmailAndPassword(
-        email,
-        password
-      );
+      try {
+        await persistenceReady;
 
-      $("#loginForm").reset();
+        const result =
+          await auth.signInWithEmailAndPassword(
+            email,
+            password
+          );
 
-    } catch (error) {
-      console.error("Login error:", error);
-      authError.textContent = getAuthErrorMessage(error);
+        console.info(
+          "Firebase login successful:",
+          result.user.uid
+        );
 
-    } finally {
-      button.disabled = false;
-      button.textContent = "LOGIN";
+        $("#loginForm").reset();
+
+      } catch (error) {
+        console.error("Login error:", error);
+
+        authError.textContent =
+          getAuthErrorMessage(error);
+
+      } finally {
+        button.disabled = false;
+        button.textContent = "LOGIN";
+      }
     }
-  });
+  );
 
   // ==========================================
   // PROFILE PANEL
   // ==========================================
 
-  const profilePanel = $("#profilePanel");
-
-  function openProfilePanel() {
-    const user = auth.currentUser;
-
-    if (!user) return;
-
+  function updateProfile(user) {
     $("#profileEmail").textContent =
       user.email || "Email not available";
 
@@ -211,7 +328,14 @@
       user.emailVerified
         ? "Active · Email verified"
         : "Active · Email not verified";
+  }
 
+  function openProfilePanel() {
+    const user = auth.currentUser;
+
+    if (!user) return;
+
+    updateProfile(user);
     profilePanel.hidden = false;
   }
 
@@ -245,34 +369,37 @@
   // LOGOUT
   // ==========================================
 
-  $("#logoutButton").addEventListener("click", async () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to logout?"
-    );
-
-    if (!confirmed) return;
-
-    const logoutButton = $("#logoutButton");
-
-    logoutButton.disabled = true;
-    logoutButton.textContent = "LOGGING OUT...";
-
-    try {
-      await auth.signOut();
-      closeProfilePanel();
-
-    } catch (error) {
-      console.error("Logout error:", error);
-
-      showToast(
-        "Unable to logout. Please try again."
+  $("#logoutButton").addEventListener(
+    "click",
+    async () => {
+      const confirmed = window.confirm(
+        "Are you sure you want to logout?"
       );
 
-    } finally {
-      logoutButton.disabled = false;
-      logoutButton.textContent = "↪ LOG OUT";
+      if (!confirmed) return;
+
+      const button = $("#logoutButton");
+
+      button.disabled = true;
+      button.textContent = "LOGGING OUT...";
+
+      try {
+        await auth.signOut();
+        closeProfilePanel();
+
+      } catch (error) {
+        console.error("Logout error:", error);
+
+        showToast(
+          "Unable to logout. Please try again."
+        );
+
+      } finally {
+        button.disabled = false;
+        button.textContent = "↪ LOG OUT";
+      }
     }
-  });
+  );
 
   // ==========================================
   // CLOUDFLARE WORKER API
@@ -281,8 +408,6 @@
   const API_BASE_URL =
     window.APP_CONFIG?.API_BASE_URL?.replace(/\/+$/, "");
 
-  let backendSyncedUid = null;
-
   async function syncUserWithBackend(user) {
     if (!API_BASE_URL) {
       throw new Error("Backend API URL is missing.");
@@ -290,7 +415,7 @@
 
     const idToken = await user.getIdToken();
 
-    const result = await fetch(
+    const response = await fetch(
       `${API_BASE_URL}/api/auth/sync`,
       {
         method: "POST",
@@ -301,9 +426,9 @@
       }
     );
 
-    const data = await result.json();
+    const data = await response.json();
 
-    if (!result.ok || !data.success) {
+    if (!response.ok || !data.success) {
       throw new Error(
         data.message ||
         data.error ||
@@ -315,7 +440,7 @@
   }
 
   // ==========================================
-  // AUTH STATE
+  // FIREBASE AUTH STATE LISTENER
   // ==========================================
 
   auth.onAuthStateChanged(async user => {
@@ -323,20 +448,17 @@
       authScreen.hidden = true;
       gameShell.hidden = false;
 
+      updateProfile(user);
+
       $("#profileButton").title =
         user.email || "Account";
 
-      $("#profileEmail").textContent =
-        user.email || "Email not available";
+      console.info(
+        "Islandora user authenticated:",
+        user.uid
+      );
 
-      $("#profileUid").textContent =
-        user.uid || "User ID not available";
-
-      $("#profileStatus").textContent =
-        user.emailVerified
-          ? "Active · Email verified"
-          : "Active · Email not verified";
-
+      // Backend synchronization must not block login.
       try {
         if (backendSyncedUid !== user.uid) {
           const backendUser =
@@ -348,11 +470,6 @@
             "Islandora account synchronized with D1:",
             backendUser
           );
-
-          $("#profileStatus").textContent =
-            user.emailVerified
-              ? "Active · Email verified"
-              : "Active · Email not verified";
         }
 
       } catch (error) {
@@ -369,11 +486,6 @@
         );
       }
 
-      console.info(
-        "Islandora user authenticated:",
-        user.uid
-      );
-
     } else {
       backendSyncedUid = null;
 
@@ -382,14 +494,25 @@
       gameShell.hidden = true;
       authScreen.hidden = false;
 
-      if (new URLSearchParams(window.location.search).has("ref")) {
-  showRegister();
-} else {
-  showLogin();
-}
-    
+      const params =
+        new URLSearchParams(window.location.search);
+
+      if (params.has("ref")) {
+        showRegister();
+      } else {
+        showLogin();
+      }
+    }
+  }, error => {
+    console.error("Firebase Auth State error:", error);
+
+    authError.textContent =
+      getAuthErrorMessage(error);
+
+    authScreen.hidden = false;
+    gameShell.hidden = true;
   });
-}
+
   // ==========================================
   // ISLAND DATA
   // ==========================================
@@ -523,25 +646,6 @@
   }
 
   // ==========================================
-  // TOAST
-  // ==========================================
-
-  function showToast(message) {
-    const element = $("#toast");
-
-    if (!element) return;
-
-    element.textContent = message;
-    element.classList.add("show");
-
-    clearTimeout(toastTimer);
-
-    toastTimer = setTimeout(() => {
-      element.classList.remove("show");
-    }, 2600);
-  }
-
-  // ==========================================
   // UNLOCK STATUS - PREVIEW
   // ==========================================
 
@@ -556,44 +660,44 @@
   function renderIslandList() {
     const islandList = $("#islandList");
 
-    islandList.innerHTML = islands.map((island, index) => {
-      const unlocked = isUnlocked(index);
+    islandList.innerHTML = islands.map(
+      (island, index) => {
+        const unlocked = isUnlocked(index);
 
-      return `
-        <button
-          class="island-card
-            ${selectedIsland === index ? "active" : ""}
-            ${unlocked ? "" : "locked"}"
-          data-island="${index}"
-          type="button"
-        >
-
-          <span class="island-thumb">
-            <img
-              src="${islandImagePath(index)}"
-              alt="${island.name}"
-              loading="lazy"
-            >
-          </span>
-
-          <span class="island-details">
-            <strong>Island ${index + 1}</strong>
-            <span>
-              ${
-                unlocked
-                  ? island.type
-                  : "Unlock after completing Island " + index
-              }
+        return `
+          <button
+            class="island-card
+              ${selectedIsland === index ? "active" : ""}
+              ${unlocked ? "" : "locked"}"
+            data-island="${index}"
+            type="button"
+          >
+            <span class="island-thumb">
+              <img
+                src="${islandImagePath(index)}"
+                alt="${island.name}"
+                loading="lazy"
+              >
             </span>
-          </span>
 
-          <span class="island-lock">
-            ${unlocked ? "›" : "🔒"}
-          </span>
+            <span class="island-details">
+              <strong>Island ${index + 1}</strong>
+              <span>
+                ${
+                  unlocked
+                    ? island.type
+                    : "Unlock after completing Island " + index
+                }
+              </span>
+            </span>
 
-        </button>
-      `;
-    }).join("");
+            <span class="island-lock">
+              ${unlocked ? "›" : "🔒"}
+            </span>
+          </button>
+        `;
+      }
+    ).join("");
   }
 
   // ==========================================
@@ -602,7 +706,6 @@
 
   function renderIsland() {
     const island = islands[selectedIsland];
-
     const hero = $("#islandHero");
 
     $("#islandTitle").textContent =
@@ -652,7 +755,6 @@
       `;
 
       $("#islandRate").textContent = "0 Coins/day";
-
       return;
     }
 
@@ -662,7 +764,6 @@
 
       return `
         <article class="mining-box ${maxed ? "maxed" : ""}">
-
           <div class="box-name">
             Box #${index + 1}
           </div>
@@ -695,7 +796,6 @@
           <div class="box-count">
             ${count}/10 Opened
           </div>
-
         </article>
       `;
     }).join("");
@@ -712,7 +812,7 @@
   }
 
   // ==========================================
-  // MINING STORAGE
+  // MINING STORAGE - PREVIEW
   // ==========================================
 
   function updateStorage(amount = pendingCoins) {
@@ -752,60 +852,71 @@
   // ISLAND CLICK
   // ==========================================
 
-  $("#islandList").addEventListener("click", event => {
-    const card = event.target.closest("[data-island]");
+  $("#islandList").addEventListener(
+    "click",
+    event => {
+      const card = event.target.closest("[data-island]");
 
-    if (!card) return;
+      if (!card) return;
 
-    const index = Number(card.dataset.island);
+      const index = Number(card.dataset.island);
 
-    if (!isUnlocked(index)) {
-      showToast(
-        "🔒 Complete the previous island to unlock this island."
-      );
+      if (!isUnlocked(index)) {
+        showToast(
+          "🔒 Complete the previous island to unlock this island."
+        );
 
-      return;
+        return;
+      }
+
+      selectedIsland = index;
+      renderIsland();
     }
-
-    selectedIsland = index;
-
-    renderIsland();
-  });
+  );
 
   // ==========================================
   // CHEST CLICK
   // ==========================================
 
-  $("#boxGrid").addEventListener("click", event => {
-    const button = event.target.closest("[data-box]");
+  $("#boxGrid").addEventListener(
+    "click",
+    event => {
+      const button = event.target.closest("[data-box]");
 
-    if (!button || button.disabled) return;
+      if (!button || button.disabled) return;
 
-    showToast(
-      "Mining will be activated after secure backend integration."
-    );
-  });
+      showToast(
+        "Mining will be activated after secure backend integration."
+      );
+    }
+  );
 
   // ==========================================
   // VIEW ALL ISLANDS
   // ==========================================
 
-  $("#viewAllIslands").addEventListener("click", () => {
-    $("#islandList").scrollIntoView({
-      behavior: "smooth",
-      block: "nearest"
-    });
-  });
+  $("#viewAllIslands").addEventListener(
+    "click",
+    () => {
+      $("#islandList").scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+      });
+    }
+  );
 
   // ==========================================
   // CLAIM COINS
   // ==========================================
 
-  $("#claimButton").addEventListener("click", () => {
-    showToast(
-      "Coin claiming will be available after backend integration."
-    );
-  });
+  $("#claimButton").addEventListener(
+    "click",
+    () => {
+      showToast(
+        "Coin claiming will be available after backend integration."
+      );
+    }
+  );
 
   // ==========================================
   // BOTTOM NAVIGATION
