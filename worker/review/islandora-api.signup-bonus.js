@@ -108,34 +108,15 @@ async function syncUser(request, env) {
   if (!email) return response({ success: false, error: "Email not available." }, 400);
 
   try {
-    // D1 batch is transactional. The first statement creates only a genuinely new UID
-    // with its one-time bonus. Existing rows are left untouched by this INSERT.
-    // SQLite changes() in the immediately following statement is 1 only when that
-    // INSERT created the user, so the matching ledger row is written atomically.
-    await env.DB.batch([
-      env.DB.prepare(`
-        INSERT INTO users (
-          firebase_uid, email, gems, coins, signup_bonus_granted, account_status
-        )
-        VALUES (?, ?, 1000, 0, 1, 'active')
-        ON CONFLICT(firebase_uid) DO NOTHING
-      `).bind(uid, email),
-
-      env.DB.prepare(`
-        INSERT INTO wallet_transactions (
-          id, firebase_uid, currency, amount, transaction_type,
-          description, reference_id, idempotency_key
-        )
-        SELECT ?, ?, 'Gems', 1000, 'signup_bonus',
-               'One-time signup bonus', ?, ?
-        WHERE changes() = 1
-      `).bind(
-        crypto.randomUUID(),
-        uid,
-        uid,
-        `signup_bonus:${uid}`
+    // A database trigger records the bonus ledger in the same atomic INSERT.
+    // ON CONFLICT DO NOTHING means returning users never receive another bonus.
+    await env.DB.prepare(`
+      INSERT INTO users (
+        firebase_uid, email, gems, coins, signup_bonus_granted, account_status
       )
-    ]);
+      VALUES (?, ?, 1000, 0, 1, 'active')
+      ON CONFLICT(firebase_uid) DO NOTHING
+    `).bind(uid, email).run();
 
     // Preserve the existing email-sync behavior for both new and returning users.
     await env.DB.prepare(`
