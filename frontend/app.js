@@ -464,6 +464,10 @@
           const backendUser =
             await syncUserWithBackend(user);
 
+          // Display the server-authoritative Gems balance.
+          $("#gemBalance").textContent =
+            Number(backendUser.gems || 0).toLocaleString();
+
           backendSyncedUid = user.uid;
 
           console.info(
