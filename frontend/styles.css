@@ -1140,3 +1140,62 @@ button { cursor: pointer; }
   .island-action-row { align-items: stretch; flex-direction: column; }
   .island-unlock-button { width: 100%; }
 }
+
+
+/* ===== COIN TO GEM EXCHANGE ===== */
+.exchange-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 260px);
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+  padding: 15px;
+  border: 1px solid #00dfff88;
+  border-radius: 17px;
+  background: linear-gradient(115deg, #073b58, #092d4b);
+}
+.exchange-copy h3 {
+  margin: 4px 0;
+  color: #fff;
+  font-size: 16px;
+}
+.exchange-copy p {
+  margin: 0;
+  color: #b9e6f2;
+  font-size: 11px;
+  font-weight: 800;
+}
+.exchange-controls {
+  display: flex;
+  gap: 7px;
+}
+.exchange-controls input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #2c9ab2;
+  border-radius: 10px;
+  outline: none;
+  background: #031f36;
+  color: #fff;
+  font: inherit;
+  font-weight: 800;
+}
+.exchange-controls button {
+  flex-shrink: 0;
+  padding: 10px 13px;
+  border: 1px solid #ffe48a;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #ffe777, #e7a925);
+  color: #422e00;
+  font-size: 11px;
+  font-weight: 1000;
+}
+.exchange-controls button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+@media (max-width: 700px) {
+  .exchange-panel { grid-template-columns: 1fr; padding: 12px; }
+  .exchange-controls { width: 100%; }
+}
