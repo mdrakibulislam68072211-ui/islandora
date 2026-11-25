@@ -129,8 +129,8 @@ async function openBox(env,uid,b){
       .bind(crypto.randomUUID(),uid,n,box,key,uid),
     env.DB.prepare("UPDATE user_islands SET last_mining_at=CURRENT_TIMESTAMP WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')")
       .bind(uid,n,key,uid),
-    env.DB.prepare("UPDATE referrals SET is_valid=1,valid_at=CURRENT_TIMESTAMP WHERE referred_uid=? AND is_valid=0 AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')")
-      .bind(uid,key,uid)
+    // Referral eligibility is intentionally not changed here. The referral service
+    // must verify the recorded device relationship before marking a referral valid.
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);return json({success:true,island_number:n,box_number:box,price_gems:price});}
   catch(e){console.error(e);return json({success:false,error:"Box opening failed"},500);}
