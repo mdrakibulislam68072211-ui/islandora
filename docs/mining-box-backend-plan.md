@@ -31,12 +31,16 @@
 - `GET /api/game/state`: settle accrued mining for the authenticated user and return authoritative Gems, Coins, island unlocks, box counts, pending balances, and rates.
 - `POST /api/game/island/unlock`: body `{ island_number }`; verify prerequisite and Gems, debit once, write ledger, unlock island.
 - `POST /api/game/box/open`: body `{ island_number, box_number, idempotency_key }`; verify island unlock, balance, price, max count, debit Gems, increment count, write ledger, and mark an eligible referral valid on the first successful open.
-- `POST /api/game/claim`: body `{ island_number, idempotency_key }`; settle mining, require >=5 pending Coins, credit Coins, clear only that island's pending amount, and write ledger.
+- `POST /api/game/claim`: body `{ island_number, idempotency_key }`; settle mining, require >=5 pending Coins, credit Coins, clear only that island's pending amount, and write ledger.\n- `POST /api/game/exchange`: body `{ coins, idempotency_key }`; debit Coins, deduct 1% fee (rounded up), credit remaining Gems, and write both ledger entries.
 
-## Important unresolved configuration
+## Game economy configuration
 
-Only Island 1 box prices/rates are explicitly specified in the current project requirements. Do not silently copy those rates to Islands 2–10. Their per-box prices/rates must be confirmed or made admin-configurable before those islands can mine.
+- All 10 islands require Gems to unlock. Initial unlock costs: 500, 1,000, 2,000, 4,000, 8,000, 16,000, 32,000, 64,000, 128,000, 256,000 Gems.
+- Island 1 box prices/rates remain exactly as specified above.
+- Initial defaults for Islands 2–10: box prices double per island; daily mining rates multiply by 1.5 per island. These are assistant-selected starting defaults and should be admin-configurable before public launch.
+- Coins can be exchanged to Gems only at 1 Coin = 1 Gem, with a 1% fee. Fee is rounded up to a whole Coin; e.g. 1,000 Coins deducts 10 and credits 990 Gems.
+- The exchange must never allow Gems-to-Coins conversion.
 
-## Safety / release
+## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe frontend remains in preview mode until the backend is tested against a separate staging database and the UI is integrated.\n\n## Safety / release
 
 This branch is preparation only. No production D1 writes, Worker deployment, Pages deployment, or main-branch changes are part of this work. Test all endpoints against a separate staging database and staging Worker before requesting production approval.
