@@ -99,7 +99,7 @@ async function unlock(env,uid,b){
   const n=Number(b?.island_number);if(!Number.isInteger(n)||n<1||n>10)return json({success:false,error:"Invalid island"},400);
   const idemKey=b.idempotency_key;if(!idem(idemKey))return json({success:false,error:"A valid idempotency_key is required"},400);
   const price=ISLAND_UNLOCK[n-1];
-  if(n>1){const prev=await env.DB.prepare("SELECT COUNT(*) AS total FROM user_island_boxes WHERE firebase_uid=? AND island_number=? AND open_count<10").bind(uid,n-1).first();if(Number(prev?.total)>0)return json({success:false,error:"Complete all 10 boxes on the previous island first"},409);}
+  if(n>1){const prev=await env.DB.prepare("SELECT COUNT(*) AS total, COALESCE(MIN(open_count),0) AS min_open FROM user_island_boxes WHERE firebase_uid=? AND island_number=?").bind(uid,n-1).first();if(Number(prev?.total)!==10||Number(prev?.min_open)<10)return json({success:false,error:"Open all 10 boxes 10 times on the previous island first"},409);}
   const already=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
   if(already?.is_unlocked)return json({success:true,message:"Island already unlocked"});
   const stmts=[
