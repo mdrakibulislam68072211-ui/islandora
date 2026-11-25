@@ -14,6 +14,17 @@ Status: required, not yet implemented. This specification is for the staging/rev
 - Every request is queued for manual Admin review and payment.
 - User-visible request statuses: Pending, Approved, Rejected. A paid/completed state may be added if the Admin workflow distinguishes approval from actual payout.
 
+
+## Latest Withdrawal Activity feed
+
+- The user dashboard will show exactly one public activity card: the single latest withdrawal event across all users.
+- Display the requester's name, withdrawal amount in Coins, and current status: Pending, Approved, or Rejected.
+- When Admin changes a request from Pending to Approved or Rejected, update that same latest event rather than creating a second card for the same request.
+- A newer withdrawal event replaces the previous event in this one-card feed.
+- Remove the event from this public latest-activity card after 24 hours; keep the underlying withdrawal request and Admin audit history according to the system's retention policy.
+- Never display payout destination details, email addresses, Firebase UIDs, or other sensitive account information in the public card.
+- The existing `users` table currently stores email but has no display-name column. Before implementing the public name field, decide the trusted source for a user's display name (for example, collect and store a profile display name); do not derive a public name from the email address.
+
 ## Admin workflow
 
 - Admin can view requests with user identity, requested amount, payout method, destination details, valid-referral count, submission time, and status.
