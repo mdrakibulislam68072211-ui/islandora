@@ -88,6 +88,9 @@
     "#islandStatus",
     "#islandUnlockButton",
     "#islandUnlockHint",
+    "#exchangeAmount",
+    "#exchangeButton",
+    "#exchangePreview",
     "#coinBalance",
     "#gemBalance",
     "#boxGrid",
@@ -856,6 +859,7 @@
     $("#storageProgressFill").style.width = `${percentage}%`;
     $("#storagePanel").classList.toggle("storage-full", current >= STORAGE_CAP);
     $("#claimButton").disabled = gameActionPending || Math.floor(current) < 5;
+    updateExchangePreview();
   }
 
   // ==========================================
@@ -949,6 +953,33 @@
       });
       await loadGameState();
       showToast("Island unlocked successfully!");
+    });
+  });
+
+  function updateExchangePreview() {
+    const amount = Number($("#exchangeAmount").value);
+    const balance = Number(gameStateData?.user?.coins || 0);
+    const valid = Number.isSafeInteger(amount) && amount > 0 && amount <= balance;
+    const fee = valid ? Math.ceil(amount * 0.01) : 0;
+    const gems = valid ? amount - fee : 0;
+    $("#exchangePreview").textContent = valid
+      ? `1% fee: ${fee.toLocaleString()} Coins · You receive ${gems.toLocaleString()} Gems`
+      : `Available: ${balance.toLocaleString()} Coins · 1% exchange fee`;
+    $("#exchangeButton").disabled = gameActionPending || !valid || gems < 1;
+  }
+
+  $("#exchangeAmount").addEventListener("input", updateExchangePreview);
+  $("#exchangeButton").addEventListener("click", () => {
+    if (gameActionPending) return;
+    const amount = Number($("#exchangeAmount").value);
+    runGameAction(async () => {
+      const result = await gameApiRequest("/api/game/exchange", {
+        method: "POST",
+        body: { coins: amount, idempotency_key: crypto.randomUUID() }
+      });
+      $("#exchangeAmount").value = "";
+      await loadGameState();
+      showToast(`${Number(result.gems_received || 0).toLocaleString()} Gems added after fee.`);
     });
   });
 
