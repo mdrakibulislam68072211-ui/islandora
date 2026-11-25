@@ -86,6 +86,10 @@
     "#islandDescription",
     "#islandCost",
     "#islandStatus",
+    "#islandUnlockButton",
+    "#islandUnlockHint",
+    "#coinBalance",
+    "#gemBalance",
     "#boxGrid",
     "#islandRate",
     "#viewAllIslands",
@@ -439,6 +443,44 @@
     return data.user;
   }
 
+  async function gameApiRequest(path, options = {}) {
+    if (!API_BASE_URL || !auth.currentUser) {
+      throw new Error("Please login again to continue.");
+    }
+    const idToken = await auth.currentUser.getIdToken();
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || data.error || "Game request failed.");
+    }
+    return data;
+  }
+
+  function updateBalances(user) {
+    if (!user) return;
+    $("#coinBalance").textContent = Number(user.coins || 0).toLocaleString();
+    $("#gemBalance").textContent = Number(user.gems || 0).toLocaleString();
+  }
+
+  function currentIslandData() {
+    return gameStateData?.islands?.[selectedIsland] || null;
+  }
+
+  async function loadGameState() {
+    const data = await gameApiRequest("/api/game/state");
+    gameStateData = data;
+    updateBalances(data.user);
+    renderIsland();
+    return data;
+  }
+
   // ==========================================
   // FIREBASE AUTH STATE LISTENER
   // ==========================================
@@ -463,18 +505,13 @@
         if (backendSyncedUid !== user.uid) {
           const backendUser =
             await syncUserWithBackend(user);
-
-          // Display the server-authoritative Gems balance.
-          $("#gemBalance").textContent =
-            Number(backendUser.gems || 0).toLocaleString();
-
           backendSyncedUid = user.uid;
-
           console.info(
             "Islandora account synchronized with D1:",
             backendUser
           );
         }
+        await loadGameState();
 
       } catch (error) {
         console.error(
@@ -630,12 +667,9 @@
   // ==========================================
 
   const STORAGE_CAP = 1500;
-
   let selectedIsland = 0;
-
-  const boxCounts = Array(10).fill(0);
-
-  let pendingCoins = 0;
+  let gameStateData = null;
+  let gameActionPending = false;
 
   // ==========================================
   // IMAGE PATHS
@@ -654,7 +688,7 @@
   // ==========================================
 
   function isUnlocked(index) {
-    return index === 0;
+    return !!gameStateData?.islands?.[index]?.is_unlocked;
   }
 
   // ==========================================
@@ -690,7 +724,7 @@
                 ${
                   unlocked
                     ? island.type
-                    : "Unlock after completing Island " + index
+                    : (index === 0 ? "Unlock with Gems" : "Complete Island " + index + " first")
                 }
               </span>
             </span>
@@ -721,13 +755,31 @@
     $("#islandDescription").textContent =
       island.description;
 
-    $("#islandCost").textContent =
-      island.cost.toLocaleString() + " Gems";
+    const islandState = currentIslandData();
+    const unlocked = isUnlocked(selectedIsland);
+    const unlockCost = Number(islandState?.unlock_cost_gems ?? island.cost);
+    $("#islandCost").textContent = unlockCost.toLocaleString() + " Gems";
+    $("#islandStatus").textContent = unlocked ? "✓ UNLOCKED" : "🔒 LOCKED";
 
-    $("#islandStatus").textContent =
-      isUnlocked(selectedIsland)
-        ? "✓ UNLOCKED"
-        : "🔒 LOCKED";
+    const unlockButton = $("#islandUnlockButton");
+    const unlockHint = $("#islandUnlockHint");
+    unlockButton.hidden = unlocked;
+    unlockButton.disabled = gameActionPending || !islandState ||
+      Number(gameStateData?.user?.gems || 0) < unlockCost ||
+      (selectedIsland > 0 && !gameStateData.islands[selectedIsland - 1]?.boxes?.every(box => box.open_count >= 10));
+    unlockButton.textContent = gameActionPending ? "PLEASE WAIT..." : `UNLOCK FOR ${unlockCost.toLocaleString()} GEMS`;
+    if (unlocked) {
+      unlockHint.textContent = "";
+      unlockHint.hidden = true;
+    } else {
+      unlockHint.hidden = false;
+      unlockHint.textContent = selectedIsland > 0 &&
+        !gameStateData?.islands?.[selectedIsland - 1]?.boxes?.every(box => box.open_count >= 10)
+        ? "Open all 10 boxes 10 times on the previous island to unlock this island."
+        : (Number(gameStateData?.user?.gems || 0) < unlockCost
+          ? "Not enough Gems to unlock this island."
+          : "Unlock this island to access its mining boxes.");
+    }
 
     hero.style.setProperty(
       "--island-image",
@@ -745,111 +797,65 @@
   function renderBoxes() {
     const grid = $("#boxGrid");
 
-    if (!isUnlocked(selectedIsland)) {
+    const islandState = currentIslandData();
+    if (!isUnlocked(selectedIsland) || !islandState) {
       grid.innerHTML = `
         <div class="locked-island-message">
           <div style="font-size:48px">🔒</div>
-
           <h3>${islands[selectedIsland].name}</h3>
-
-          <p>
-            Complete the previous island to unlock this island.
-          </p>
+          <p>Unlock this island to access its mining boxes.</p>
         </div>
       `;
-
       $("#islandRate").textContent = "0 Coins/day";
+      updateStorage(0);
       return;
     }
 
-    grid.innerHTML = prices.map((price, index) => {
-      const count = boxCounts[index];
+    const boxData = islandState.boxes || [];
+    grid.innerHTML = boxData.map((box, index) => {
+      const count = Number(box.open_count || 0);
       const maxed = count >= 10;
-
+      const price = Number(box.price_gems || prices[index]);
+      const rate = Number(box.rate_coins_per_day || rates[index]);
+      const enoughGems = Number(gameStateData?.user?.gems || 0) >= price;
       return `
         <article class="mining-box ${maxed ? "maxed" : ""}">
-          <div class="box-name">
-            Box #${index + 1}
-          </div>
-
+          <div class="box-name">Box #${index + 1}</div>
           <div class="chest-art">
-            <img
-              src="${chestImagePath(index)}"
-              alt="Treasure Chest ${index + 1}"
-              loading="lazy"
-            >
+            <img src="${chestImagePath(index)}" alt="Treasure Chest ${index + 1}" loading="lazy">
           </div>
-
-          <div class="box-cost">
-            💎 ${price.toLocaleString()}
-          </div>
-
-          <div class="box-rate">
-            ⛏ +${rates[index]} / day
-          </div>
-
-          <button
-            class="open-button"
-            data-box="${index}"
-            type="button"
-            disabled
-          >
-            ${maxed ? "MAX" : "Open"}
+          <div class="box-cost">💎 ${price.toLocaleString()}</div>
+          <div class="box-rate">⛏ +${rate.toLocaleString()} / day</div>
+          <button class="open-button" data-box="${index + 1}" type="button"
+            ${maxed || gameActionPending || !enoughGems ? "disabled" : ""}>
+            ${maxed ? "MAX" : (!enoughGems ? "NEED GEMS" : "OPEN")}
           </button>
-
-          <div class="box-count">
-            ${count}/10 Opened
-          </div>
+          <div class="box-count">${count}/10 Opened</div>
         </article>
       `;
     }).join("");
 
-    const totalRate = rates.reduce(
-      (sum, rate, index) => {
-        return sum + rate * boxCounts[index];
-      },
-      0
-    );
-
-    $("#islandRate").textContent =
-      totalRate.toLocaleString() + " Coins/day";
+    const totalRate = boxData.reduce((sum, box) =>
+      sum + Number(box.rate_coins_per_day || 0) * Number(box.open_count || 0), 0);
+    $("#islandRate").textContent = totalRate.toLocaleString() + " Coins/day";
+    updateStorage(Number(islandState.pending_coins || 0));
   }
 
   // ==========================================
   // MINING STORAGE - PREVIEW
   // ==========================================
 
-  function updateStorage(amount = pendingCoins) {
-    const current = Math.max(
-      0,
-      Math.min(Number(amount) || 0, STORAGE_CAP)
-    );
-
-    pendingCoins = current;
-
+  function updateStorage(amount = Number(currentIslandData()?.pending_coins || 0)) {
+    const current = Math.max(0, Math.min(Number(amount) || 0, STORAGE_CAP));
     const percentage = (current / STORAGE_CAP) * 100;
-
-    $("#pendingCoins").textContent =
-      current.toFixed(2);
-
-    $("#storageAmount").textContent =
-      current.toFixed(2);
-
+    $("#pendingCoins").textContent = current.toFixed(2);
+    $("#storageAmount").textContent = current.toFixed(2);
     $("#storageProgressText").textContent =
       `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins`;
-
-    $("#storagePercentage").textContent =
-      `${percentage.toFixed(1)}%`;
-
-    $("#storageProgressFill").style.width =
-      `${percentage}%`;
-
-    $("#storagePanel").classList.toggle(
-      "storage-full",
-      current >= STORAGE_CAP
-    );
-
-    $("#claimButton").disabled = true;
+    $("#storagePercentage").textContent = `${percentage.toFixed(1)}%`;
+    $("#storageProgressFill").style.width = `${percentage}%`;
+    $("#storagePanel").classList.toggle("storage-full", current >= STORAGE_CAP);
+    $("#claimButton").disabled = gameActionPending || Math.floor(current) < 5;
   }
 
   // ==========================================
@@ -864,15 +870,7 @@
       if (!card) return;
 
       const index = Number(card.dataset.island);
-
-      if (!isUnlocked(index)) {
-        showToast(
-          "🔒 Complete the previous island to unlock this island."
-        );
-
-        return;
-      }
-
+      if (!Number.isInteger(index) || index < 0 || index >= islands.length) return;
       selectedIsland = index;
       renderIsland();
     }
@@ -889,9 +887,20 @@
 
       if (!button || button.disabled) return;
 
-      showToast(
-        "Mining will be activated after secure backend integration."
-      );
+      const boxNumber = Number(button.dataset.box);
+      if (!Number.isInteger(boxNumber) || gameActionPending) return;
+      runGameAction(async () => {
+        await gameApiRequest("/api/game/box/open", {
+          method: "POST",
+          body: {
+            island_number: selectedIsland + 1,
+            box_number: boxNumber,
+            idempotency_key: crypto.randomUUID()
+          }
+        });
+        await loadGameState();
+        showToast("Mining box opened successfully!");
+      });
     }
   );
 
@@ -913,14 +922,54 @@
   // CLAIM COINS
   // ==========================================
 
-  $("#claimButton").addEventListener(
-    "click",
-    () => {
-      showToast(
-        "Coin claiming will be available after backend integration."
-      );
+  $("#claimButton").addEventListener("click", () => {
+    if (gameActionPending) return;
+    runGameAction(async () => {
+      const result = await gameApiRequest("/api/game/claim", {
+        method: "POST",
+        body: {
+          island_number: selectedIsland + 1,
+          idempotency_key: crypto.randomUUID()
+        }
+      });
+      await loadGameState();
+      showToast(`${Number(result.claimed_coins || 0).toLocaleString()} Coins claimed!`);
+    });
+  });
+
+  $("#islandUnlockButton").addEventListener("click", () => {
+    if (gameActionPending) return;
+    runGameAction(async () => {
+      await gameApiRequest("/api/game/island/unlock", {
+        method: "POST",
+        body: {
+          island_number: selectedIsland + 1,
+          idempotency_key: crypto.randomUUID()
+        }
+      });
+      await loadGameState();
+      showToast("Island unlocked successfully!");
+    });
+  });
+
+  async function runGameAction(action) {
+    gameActionPending = true;
+    renderIsland();
+    try {
+      await action();
+    } catch (error) {
+      console.error("Islandora game action failed:", error);
+      showToast(error.message || "Unable to complete this action.");
+    } finally {
+      gameActionPending = false;
+      if (auth.currentUser) {
+        try { await loadGameState(); }
+        catch (error) { console.error("Game state refresh failed:", error); }
+      } else {
+        renderIsland();
+      }
     }
-  );
+  }
 
   // ==========================================
   // BOTTOM NAVIGATION
