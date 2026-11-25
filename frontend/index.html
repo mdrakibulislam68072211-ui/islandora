@@ -301,7 +301,8 @@
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 
   <script src="app.js" defer></script>
- <script src="referral.js" defer></script>
+  <script src="adblock.js" defer></script>
+  <script src="referral.js" defer></script>
 
 </head>
 
@@ -705,6 +706,20 @@
       </div>
     </section>
 
+
+    <!-- OPTIONAL AD BLOCKER NOTICE: does not restrict account or mining access -->
+    <section class="adblock-backdrop" id="adblockNotice" hidden>
+      <div class="adblock-card" role="dialog" aria-modal="true" aria-labelledby="adblockTitle">
+        <div class="adblock-icon" aria-hidden="true">🛡️</div>
+        <h2 id="adblockTitle">Ad Blocker Detected</h2>
+        <p>It looks like an ad blocker may be enabled. Please consider disabling it to support Islandora. Your account, Gems, and mining access are not affected.</p>
+        <p class="adblock-note" id="adblockStatus" role="status">If you believe this is a mistake, you can retry or continue.</p>
+        <div class="adblock-actions">
+          <button type="button" id="adblockRetry">RETRY</button>
+          <button type="button" id="adblockContinue">CONTINUE ANYWAY</button>
+        </div>
+      </div>
+    </section>
 
   </div>
 
