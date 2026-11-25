@@ -38,7 +38,22 @@
 - Coins can be exchanged to Gems only at 1 Coin = 1 Gem, with a 1% fee. Fee is rounded up to a whole Coin; e.g. 1,000 Coins deducts 10 and credits 990 Gems.
 - The exchange must never allow Gems-to-Coins conversion.
 
-## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe default-branch frontend remains in preview mode. The preparation-branch frontend is integrated with the review API but must not be released until the backend is tested against a separate staging database and staging Worker.\n\n## Current branch implementation status (review only)
+## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe default-branch frontend remains in preview mode. The preparation-branch frontend is integrated with the review API but must not be released until the backend is tested against a separate staging database and staging Worker.\n\n
+## Staging environment (created 2026-11-25)
+
+- Staging D1 database: `islandora-staging-db`
+- Staging D1 database ID: `889643d9-0f60-4c04-b9f7-80cd452b8202`
+- Region: APAC; read replication disabled.
+- Staging Worker: `islandora-staging-api`
+- Staging Worker URL: `https://islandora-staging-api.mdrakibulislam68072211.workers.dev`
+- Worker deployment/version: `871364db-0b7c-4525-96c3-a605e2127219`
+- The Worker version metadata confirms its only resource binding is `DB` pointing to the staging D1 database ID above. No production D1 binding or production secret was copied.
+- The staging database was created from the production schema only: 11 application tables, indexes, and the one-time signup-bonus ledger trigger. No production user, wallet, withdrawal, or referral records were copied.
+- A synthetic staging-only signup row was inserted to verify that the trigger grants exactly 1,000 Gems and creates a `signup_bonus` ledger record; the synthetic user and ledger row were then deleted.
+- The staging Worker is deployed and enabled on workers.dev. Direct public health URL verification from the connected tool environment is blocked by its outbound-request policy, so the health endpoint still needs a browser-side check.
+- Production Worker, production D1, and the default `main` branch remain unchanged.
+
+## Current branch implementation status (review only)
 
 The preparation branch now contains:
 - A Firebase-authenticated game Worker with state, island unlock, box open, mining claim, and Coin-to-Gem exchange routes.
