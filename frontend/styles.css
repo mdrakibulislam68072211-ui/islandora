@@ -1199,3 +1199,45 @@ button { cursor: pointer; }
   .exchange-panel { grid-template-columns: 1fr; padding: 12px; }
   .exchange-controls { width: 100%; }
 }
+
+
+/* ===== OPTIONAL AD BLOCKER NOTICE ===== */
+.adblock-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 10, 22, .78);
+  backdrop-filter: blur(7px);
+}
+.adblock-card {
+  width: min(100%, 430px);
+  padding: 25px 22px;
+  border: 1px solid #42e8ff88;
+  border-radius: 20px;
+  background: linear-gradient(150deg, #104664, #061e35);
+  color: #f4ffff;
+  text-align: center;
+  box-shadow: 0 20px 65px #0009, 0 0 25px #00dfff33;
+}
+.adblock-icon { font-size: 38px; }
+.adblock-card h2 { margin: 8px 0; font-size: 23px; }
+.adblock-card p { color: #d1eaf4; font-size: 13px; line-height: 1.6; }
+.adblock-card .adblock-note { color: #9feaff; font-size: 11px; }
+.adblock-actions { display: grid; grid-template-columns: 1fr; gap: 9px; margin-top: 18px; }
+.adblock-actions button {
+  min-height: 44px;
+  padding: 11px 14px;
+  border: 1px solid #7beaff;
+  border-radius: 24px;
+  background: linear-gradient(100deg, #087da2, #07517c);
+  color: #fff;
+  font-weight: 900;
+}
+.adblock-actions button:last-child {
+  border-color: #8dffc0;
+  background: linear-gradient(100deg, #087e58, #075c47);
+}
+.adblock-actions button:disabled { opacity: .55; cursor: wait; }
