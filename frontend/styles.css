@@ -1098,3 +1098,45 @@ button { cursor: pointer; }
     font-size: 9px !important;
   }
 }
+
+
+/* ===== SERVER-AUTHORITATIVE ISLAND UNLOCK ACTION ===== */
+.island-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px 15px;
+  border: 1px solid #00dfff77;
+  border-radius: 15px;
+  background: linear-gradient(120deg, #073b55, #062944);
+}
+.island-action-row:has(#islandUnlockButton[hidden]) {
+  display: none;
+}
+.island-action-row p {
+  margin: 0;
+  color: #c4e8f4;
+  font-size: 12px;
+  font-weight: 800;
+}
+.island-unlock-button {
+  flex-shrink: 0;
+  padding: 11px 17px;
+  border: 1px solid #ffe48a;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #ffe777, #e7a925);
+  color: #422e00;
+  font-size: 12px;
+  font-weight: 1000;
+  cursor: pointer;
+}
+.island-unlock-button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+@media (max-width: 480px) {
+  .island-action-row { align-items: stretch; flex-direction: column; }
+  .island-unlock-button { width: 100%; }
+}
