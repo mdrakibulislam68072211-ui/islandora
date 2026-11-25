@@ -41,6 +41,28 @@
 - Coins can be exchanged to Gems only at 1 Coin = 1 Gem, with a 1% fee. Fee is rounded up to a whole Coin; e.g. 1,000 Coins deducts 10 and credits 990 Gems.
 - The exchange must never allow Gems-to-Coins conversion.
 
-## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe frontend remains in preview mode until the backend is tested against a separate staging database and the UI is integrated.\n\n## Safety / release
+## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe frontend remains in preview mode until the backend is tested against a separate staging database and the UI is integrated.\n\n## Current branch implementation status (review only)
+
+The preparation branch now contains:
+- A Firebase-authenticated game Worker with state, island unlock, box open, mining claim, and Coin-to-Gem exchange routes.
+- A frontend integration that loads server-authoritative balances and island state after Firebase account synchronization, and sends unlock/open/claim actions to the Worker.
+- An explicit unlock action for each locked island; the UI allows users to inspect locked islands while the Worker enforces the previous-island completion rule.
+- Generated primary keys for wallet, island, and box records to match the existing D1 schema.
+- Atomic conditional guards for island unlock and box opening, including the 10-open maximum and idempotency checks.
+- Whole-Coin claims: only the integer portion is credited to the integer Coin balance; any fractional mining remainder stays in that island's pending storage.
+
+## Schema and validation notes
+
+The existing D1 schema was inspected read-only. In particular, `wallet_transactions.amount` and `users.coins` use INTEGER affinity, while `user_islands.pending_coins` is REAL. The claim path therefore preserves fractional pending Coins instead of crediting fractional values into the spendable Coin balance.
+
+The revised SQL transaction patterns were exercised against a local SQLite in-memory database using the live table definitions. Checks covered:
+- Island 1 unlock debit and ledger insertion.
+- The 10-open box maximum and rejection of an 11th open without an extra Gems debit.
+- Claiming 5 whole Coins from 5.75 pending Coins while preserving the 0.75 remainder.
+- Exchanging 1,000 Coins into 990 Gems with a 10-Coin fee.
+
+These are local SQL logic checks, not a Cloudflare D1 staging test. A separate staging D1 database and staging Worker are still required before production approval. The default branch and live production Worker/database have not been changed by this branch work.
+
+## Safety / release
 
 This branch is preparation only. No production D1 writes, Worker deployment, Pages deployment, or main-branch changes are part of this work. Test all endpoints against a separate staging database and staging Worker before requesting production approval.
