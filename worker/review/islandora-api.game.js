@@ -6,7 +6,7 @@ let jwksCache = null, jwksExpiresAt = 0;
 const PROJECT = "islandora-c1f7b";
 const JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 const CORS = {
-  "Access-Control-Allow-Origin": "https://islandora.pages.dev",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Content-Type": "application/json"
