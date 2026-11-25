@@ -1,0 +1,21 @@
+{
+  "exchange": {
+    "direction": "coins_to_gems_only",
+    "coins_per_gem": 1,
+    "fee_percent": 1,
+    "fee_rounding": "ceil_to_whole_coin"
+  },
+  "island_unlock_gems": [500,1000,2000,4000,8000,16000,32000,64000,128000,256000],
+  "island_1_box_prices_gems": [10,20,30,50,100,150,200,300,500,1000],
+  "island_1_box_daily_rates_coins": [2,4,6,10,20,30,40,50,100,200],
+  "islands_2_to_10_defaults": {
+    "box_price_multiplier_per_island": 2,
+    "daily_rate_multiplier_per_island": 1.5,
+    "admin_configurable": true
+  },
+  "limits": {
+    "opens_per_box": 10,
+    "claim_minimum_coins_per_island": 5,
+    "storage_cap_coins_per_island": 1500
+  }
+}
