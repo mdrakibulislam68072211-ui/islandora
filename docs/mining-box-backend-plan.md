@@ -2,14 +2,11 @@
 
 ## Current verified state
 
-- The production frontend is still in preview mode.
-- `frontend/app.js` hardcodes island unlock state, box counts, pending Coins, and storage in browser memory.
-- Every Open button is rendered disabled.
-- Clicking a box only displays the message that secure backend integration is pending.
-- Claim is also a placeholder.
-- `frontend/config.js` still has `SETTINGS.PREVIEW_MODE: true`.
-- Production D1 already contains `user_islands`, `user_island_boxes`, `wallet_transactions`, `referrals`, and `users` tables.
-- The main production Worker currently has Firebase-authenticated `POST /api/auth/sync`; mining routes are not yet implemented.
+- The default `main` branch and production website remain in preview mode.
+- The preparation branch is separate and contains the new Worker and frontend integration for review.
+- Production D1 contains `user_islands`, `user_island_boxes`, `wallet_transactions`, `referrals`, and `users` tables.
+- The live production Worker still has Firebase-authenticated `POST /api/auth/sync`; the game routes on the preparation branch are not deployed.
+- No production website, Worker, or D1 data has been changed by this preparation work.
 
 ## Required server-authoritative behavior
 
@@ -41,7 +38,7 @@
 - Coins can be exchanged to Gems only at 1 Coin = 1 Gem, with a 1% fee. Fee is rounded up to a whole Coin; e.g. 1,000 Coins deducts 10 and credits 990 Gems.
 - The exchange must never allow Gems-to-Coins conversion.
 
-## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe frontend remains in preview mode until the backend is tested against a separate staging database and the UI is integrated.\n\n## Current branch implementation status (review only)
+## Implementation files on this branch\n\n- `worker/review/islandora-api.game.js`: review-only Worker implementation with Firebase auth, game state, island unlock, box open, claim, and Coins-to-Gems exchange routes.\n- `worker/config/game-defaults.json`: selected economy defaults.\n- `worker/migrations/0002_game_indexes.sql`: supporting indexes only.\n\nThe default-branch frontend remains in preview mode. The preparation-branch frontend is integrated with the review API but must not be released until the backend is tested against a separate staging database and staging Worker.\n\n## Current branch implementation status (review only)
 
 The preparation branch now contains:
 - A Firebase-authenticated game Worker with state, island unlock, box open, mining claim, and Coin-to-Gem exchange routes.
