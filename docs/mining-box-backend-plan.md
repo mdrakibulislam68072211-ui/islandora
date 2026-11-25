@@ -79,3 +79,12 @@ These are local SQL logic checks, not a Cloudflare D1 staging test. A separate s
 ## Safety / release
 
 This branch is preparation only. No production D1 writes, Worker deployment, Pages deployment, or main-branch changes are part of this work. Test all endpoints against a separate staging database and staging Worker before requesting production approval.
+
+
+## Referral integration staging gate (2026-11-25)
+
+- The preparation-branch frontend currently has `REFERRAL_API_URL` intentionally blank. This prevents staging browser tests from accidentally calling the production Referral Worker.
+- The game Worker must not mark a referral valid by directly updating `referrals`; the Referral Worker owns device eligibility and same-device rejection.
+- The box-open route currently does not call a referral validation endpoint. As a result, referral validity after a successful first box open is temporarily pending until a separate staging Referral Worker and authenticated internal callback are configured.
+- Before enabling referral validation in staging, create a separate staging Referral Worker bound only to `islandora-staging-db`, configure a staging-only internal secret, and test: different-device referral becomes valid after first successful box open; same-device referral remains invalid; repeated box opens do not duplicate validity or commissions.
+- Do not point staging frontend or staging game Worker at the production Referral Worker. Do not deploy this review branch to production.
