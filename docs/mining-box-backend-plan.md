@@ -42,8 +42,9 @@
 
 The preparation branch now contains:
 - A Firebase-authenticated game Worker with state, island unlock, box open, mining claim, and Coin-to-Gem exchange routes.
-- A frontend integration that loads server-authoritative balances and island state after Firebase account synchronization, and sends unlock/open/claim actions to the Worker.
+- A frontend integration that loads server-authoritative balances and island state after Firebase account synchronization, and sends unlock/open/claim/exchange actions to the Worker.
 - An explicit unlock action for each locked island; the UI allows users to inspect locked islands while the Worker enforces the previous-island completion rule.
+- A Coins-to-Gems exchange panel showing the 1% fee and server-confirmed result.
 - Generated primary keys for wallet, island, and box records to match the existing D1 schema.
 - Atomic conditional guards for island unlock and box opening, including the 10-open maximum and idempotency checks.
 - Whole-Coin claims: only the integer portion is credited to the integer Coin balance; any fractional mining remainder stays in that island's pending storage.
