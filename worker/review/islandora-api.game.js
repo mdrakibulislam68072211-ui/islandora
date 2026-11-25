@@ -103,9 +103,12 @@ async function unlock(env,uid,b){
   const already=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
   if(already?.is_unlocked)return json({success:true,message:"Island already unlocked"});
   const stmts=[
-    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=?").bind(price,uid,price),
-    env.DB.prepare("INSERT INTO wallet_transactions(firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,'Gems',?,?,?, ?,? WHERE changes()=1").bind(uid,-price,"island_unlock","Unlock Island "+n,String(n),idemKey),
-    env.DB.prepare("INSERT INTO user_islands(firebase_uid,island_number,is_unlocked,pending_coins,last_mining_at,unlocked_at) SELECT ?,?,1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?) ON CONFLICT(firebase_uid,island_number) DO UPDATE SET is_unlocked=1").bind(uid,n,idemKey)
+    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=? AND NOT EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1) AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?) AND (?=1 OR EXISTS(SELECT 1 FROM user_island_boxes WHERE firebase_uid=? AND island_number=? GROUP BY firebase_uid,island_number HAVING COUNT(*)=10 AND MIN(open_count)=10))")
+      .bind(price,uid,price,uid,n,idemKey,n,uid,n-1),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ? ,?,'Gems',?,?,?, ?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-price,"island_unlock","Unlock Island "+n,String(n),idemKey),
+    env.DB.prepare("INSERT INTO user_islands(id,firebase_uid,island_number,is_unlocked,pending_coins,last_mining_at,unlocked_at) SELECT ?,?,?,1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='island_unlock') ON CONFLICT(firebase_uid,island_number) DO UPDATE SET is_unlocked=1")
+      .bind(crypto.randomUUID(),uid,n,idemKey,uid)
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);return json({success:true,island_number:n,cost_gems:price});}
   catch(e){console.error(e);return json({success:false,error:"Island unlock failed"},500);}
@@ -115,16 +118,19 @@ async function openBox(env,uid,b){
   if(!Number.isInteger(n)||n<1||n>10||!Number.isInteger(box)||box<1||box>10||!idem(key))return json({success:false,error:"Invalid island, box or idempotency key"},400);
   const unlocked=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
   if(!unlocked?.is_unlocked)return json({success:false,error:"Island is locked"},403);
-  const existing=await env.DB.prepare("SELECT open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=? AND box_number=?").bind(uid,n,box).first();
-  if(Number(existing?.open_count||0)>=10)return json({success:false,error:"This box is already maxed"},409);
   await settle(env,uid);
   const {price}=cfg(n,box);
   const stmts=[
-    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=?").bind(price,uid,price),
-    env.DB.prepare("INSERT INTO wallet_transactions(firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,'Gems',?,'box_open',?,?,? WHERE changes()=1").bind(uid,-price,"Open Island "+n+" Box "+box,String(n)+":"+String(box),key),
-    env.DB.prepare("INSERT INTO user_island_boxes(firebase_uid,island_number,box_number,open_count) SELECT ?,?,?,1 WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?) ON CONFLICT(firebase_uid,island_number,box_number) DO UPDATE SET open_count=MIN(10,open_count+1),updated_at=CURRENT_TIMESTAMP").bind(uid,n,box,key),
-    env.DB.prepare("UPDATE user_islands SET last_mining_at=CURRENT_TIMESTAMP WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(uid,n,key),
-    env.DB.prepare("UPDATE referrals SET is_valid=1,valid_at=CURRENT_TIMESTAMP WHERE referred_uid=? AND is_valid=0 AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(uid,key)
+    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=? AND EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1) AND COALESCE((SELECT open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=? AND box_number=?),0)<10 AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      .bind(price,uid,price,uid,n,uid,n,box,key),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Gems',?,'box_open',?,?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-price,"Open Island "+n+" Box "+box,String(n)+":"+String(box),key),
+    env.DB.prepare("INSERT INTO user_island_boxes(id,firebase_uid,island_number,box_number,open_count) SELECT ?,?,?,?,1 WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open') ON CONFLICT(firebase_uid,island_number,box_number) DO UPDATE SET open_count=MIN(10,open_count+1),updated_at=CURRENT_TIMESTAMP WHERE user_island_boxes.open_count<10")
+      .bind(crypto.randomUUID(),uid,n,box,key,uid),
+    env.DB.prepare("UPDATE user_islands SET last_mining_at=CURRENT_TIMESTAMP WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')")
+      .bind(uid,n,key,uid),
+    env.DB.prepare("UPDATE referrals SET is_valid=1,valid_at=CURRENT_TIMESTAMP WHERE referred_uid=? AND is_valid=0 AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')")
+      .bind(uid,key,uid)
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);return json({success:true,island_number:n,box_number:box,price_gems:price});}
   catch(e){console.error(e);return json({success:false,error:"Box opening failed"},500);}
@@ -134,11 +140,16 @@ async function claim(env,uid,b){
   if(!Number.isInteger(n)||n<1||n>10||!idem(key))return json({success:false,error:"Invalid island or idempotency key"},400);
   await settle(env,uid);
   const row=await env.DB.prepare("SELECT pending_coins FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1").bind(uid,n).first();
-  const amount=Number(row?.pending_coins||0);if(amount<CLAIM_MIN)return json({success:false,error:"At least 5 pending Coins are required"},409);
+  const pending=Number(row?.pending_coins||0);
+  const amount=Math.floor(pending);
+  if(amount<CLAIM_MIN)return json({success:false,error:"At least 5 whole pending Coins are required"},409);
   const stmts=[
-    env.DB.prepare("INSERT INTO wallet_transactions(firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,'Coins',?,'mining_claim',?,?,? WHERE EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND pending_coins>=5)").bind(uid,amount,"Claim Island "+n,String(n),key,uid,n),
-    env.DB.prepare("UPDATE user_islands SET pending_coins=0 WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(uid,n,key),
-    env.DB.prepare("UPDATE users SET coins=coins+(SELECT amount FROM wallet_transactions WHERE idempotency_key=?) WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(key,uid,key)
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'mining_claim',?,?,? WHERE EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1 AND pending_coins>=?) AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      .bind(crypto.randomUUID(),uid,amount,"Claim Island "+n,String(n),key,uid,n,amount,key),
+    env.DB.prepare("UPDATE user_islands SET pending_coins=pending_coins-? WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='mining_claim')")
+      .bind(amount,uid,n,key,uid),
+    env.DB.prepare("UPDATE users SET coins=coins+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='mining_claim')")
+      .bind(amount,uid,key,uid)
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Claim unavailable or duplicate request"},409);return json({success:true,claimed_coins:amount});}
   catch(e){console.error(e);return json({success:false,error:"Claim failed"},500);}
@@ -149,9 +160,11 @@ async function exchange(env,uid,b){
   const fee=Math.ceil(amount*EXCHANGE_FEE_BPS/10000),gems=amount-fee;if(gems<1)return json({success:false,error:"Amount is too small after fee"},400);
   const stmts=[
     env.DB.prepare("UPDATE users SET coins=coins-? WHERE firebase_uid=? AND coins>=?").bind(amount,uid,amount),
-    env.DB.prepare("INSERT INTO wallet_transactions(firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,'Coins',?,'coin_to_gem_exchange','Exchange Coins to Gems (1% fee)',?,? WHERE changes()=1").bind(uid,-amount,String(gems),key),
-    env.DB.prepare("UPDATE users SET gems=gems+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(gems,uid,key),
-    env.DB.prepare("INSERT INTO wallet_transactions(firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,'Gems',?,'coin_to_gem_exchange','Received Gems after 1% exchange fee',?,? WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(uid,gems,String(amount),key+"_gems",key)
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'coin_to_gem_exchange','Exchange Coins to Gems (1% fee)',?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-amount,String(gems),key),
+    env.DB.prepare("UPDATE users SET gems=gems+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='coin_to_gem_exchange')").bind(gems,uid,key,uid),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Gems',?,'coin_to_gem_exchange','Received Gems after 1% exchange fee',?,? WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='coin_to_gem_exchange')")
+      .bind(crypto.randomUUID(),uid,gems,String(amount),key+"_gems",key,uid)
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Coins or duplicate request"},409);return json({success:true,coins_spent:amount,fee_coins:fee,gems_received:gems,fee_percent:1});}
   catch(e){console.error(e);return json({success:false,error:"Exchange failed"},500);}
