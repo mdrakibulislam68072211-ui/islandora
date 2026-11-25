@@ -902,7 +902,6 @@
             idempotency_key: crypto.randomUUID()
           }
         });
-        await loadGameState();
         showToast("Mining box opened successfully!");
       });
     }
@@ -936,7 +935,6 @@
           idempotency_key: crypto.randomUUID()
         }
       });
-      await loadGameState();
       showToast(`${Number(result.claimed_coins || 0).toLocaleString()} Coins claimed!`);
     });
   });
@@ -951,7 +949,6 @@
           idempotency_key: crypto.randomUUID()
         }
       });
-      await loadGameState();
       showToast("Island unlocked successfully!");
     });
   });
@@ -978,7 +975,6 @@
         body: { coins: amount, idempotency_key: crypto.randomUUID() }
       });
       $("#exchangeAmount").value = "";
-      await loadGameState();
       showToast(`${Number(result.gems_received || 0).toLocaleString()} Gems added after fee.`);
     });
   });
