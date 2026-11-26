@@ -6,7 +6,7 @@ window.APP_CONFIG = {
     "https://islandora-staging-api.mdrakibulislam68072211.workers.dev",
 
   REFERRAL_API_URL:
-    "",
+    "https://islandora-staging-referral-api.mdrakibulislam68072211.workers.dev",
 
   FIREBASE: {
     apiKey: "AIzaSyByOdbroiBMxmYcKwEQohbdoM2jhTNyRLE",
