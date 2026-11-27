@@ -1002,6 +1002,62 @@
   });
   updateExchangePreview();
 
+  const withdrawalAmount = $("#withdrawalAmount");
+  const withdrawalMethod = $("#withdrawalMethod");
+  const withdrawalDetails = $("#withdrawalDetails");
+  const withdrawalButton = $("#withdrawalButton");
+  const withdrawalMessage = $("#withdrawalMessage");
+  const withdrawalHistory = $("#withdrawalHistory");
+
+  async function loadWithdrawalHistory() {
+    try {
+      const data = await apiRequest(auth.currentUser, "/api/withdrawals");
+      withdrawalHistory.replaceChildren();
+      if (!data.withdrawals?.length) {
+        withdrawalHistory.textContent = "No withdrawal requests yet.";
+        return;
+      }
+      data.withdrawals.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "withdrawal-history-row";
+        row.textContent = `${Number(item.amount).toLocaleString()} Coins · ${item.payment_method} · ${item.status.toUpperCase()} · ${new Date(item.created_at + "Z").toLocaleString()}`;
+        withdrawalHistory.appendChild(row);
+      });
+    } catch (error) {
+      withdrawalHistory.textContent = "Withdrawal history unavailable.";
+    }
+  }
+
+  withdrawalButton.addEventListener("click", async () => {
+    const amount = Math.floor(Number(withdrawalAmount.value) || 0);
+    const details = withdrawalDetails.value.trim();
+    if (amount < 10000 || !details) {
+      withdrawalMessage.textContent = "Enter at least 10,000 Coins and your payment details.";
+      return;
+    }
+    withdrawalButton.disabled = true;
+    withdrawalMessage.textContent = "Submitting request...";
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/withdrawals", "POST", {
+        amount,
+        payment_method: withdrawalMethod.value,
+        payment_details: details,
+        idempotency_key: makeIdempotencyKey()
+      });
+      withdrawalMessage.textContent = `Request submitted. Reference: ${result.withdrawal_id}`;
+      withdrawalAmount.value = "";
+      withdrawalDetails.value = "";
+      await loadGameState(auth.currentUser);
+      await loadWithdrawalHistory();
+    } catch (error) {
+      withdrawalMessage.textContent = error.message;
+    } finally {
+      withdrawalButton.disabled = false;
+    }
+  });
+
+  loadWithdrawalHistory();
+
   // ==========================================
   // BOTTOM NAVIGATION
   // ==========================================
