@@ -1082,7 +1082,7 @@
       monetagSettingId = rewarded?.id || null;
       monetagZone = rewarded?.placement_id || null;
       try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
-      $("#monetagCard").hidden = !(monetagSettingId && monetagZone && monetagSdkUrl);
+      $("#monetagCard").hidden = !(telegram && monetagSettingId && monetagZone && monetagSdkUrl);
     } catch (error) {
       adsterraSettingId = null;
       $("#adsterraCard").hidden = true;
@@ -1123,7 +1123,18 @@
       if (typeof show !== "function") throw new Error("Monetag ad function is unavailable.");
       const result = await show({ ymid: event.ymid, requestVar: "islandora_reward_button" });
       if (result?.reward_event_type === "valued") {
-        message.textContent = "Ad confirmed by Monetag. Coins are being credited by the server.";
+        let status = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          status = await apiRequest(auth.currentUser, "/api/ads/monetag/status?ymid=" + encodeURIComponent(event.ymid));
+          if (status.status === "credited" || status.status === "ignored") break;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        if (status?.status === "credited") {
+          await loadGameState(auth.currentUser);
+          message.textContent = "Verified! " + Number(status.reward_coins).toLocaleString() + " Coins added to your wallet.";
+        } else {
+          message.textContent = "Monetag confirmed the ad; server postback is still pending. Your wallet will update after verification.";
+        }
       } else {
         message.textContent = "No valued impression was confirmed. No Coins were awarded.";
       }
