@@ -55,6 +55,7 @@
 
   let toastTimer = null;
   let backendSyncedUid = null;
+  let referralSetupReady = false;
 
   // ==========================================
   // REQUIRED DOM CHECK
@@ -470,10 +471,32 @@
   // FIREBASE AUTH STATE LISTENER
   // ==========================================
 
+  function waitForReferralSetup(uid) {
+    const current = window.__islandoraReferralStatus;
+    if (current?.uid === uid) return Promise.resolve(current.success === true);
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = success => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        window.removeEventListener("islandora-referral-ready", onReady);
+        resolve(success);
+      };
+      const onReady = event => {
+        if (event.detail?.uid === uid) finish(event.detail.success === true);
+      };
+      window.addEventListener("islandora-referral-ready", onReady);
+      const timer = setTimeout(() => finish(false), 8000);
+      const latest = window.__islandoraReferralStatus;
+      if (latest?.uid === uid) finish(latest.success === true);
+    });
+  }
+
   auth.onAuthStateChanged(async user => {
     if (user) {
       authScreen.hidden = true;
-      gameShell.hidden = false;
+      gameShell.hidden = true;
 
       updateProfile(user);
 
@@ -498,9 +521,15 @@
           backendSyncedUid = user.uid;
         }
 
+        referralSetupReady = await waitForReferralSetup(user.uid);
+        gameShell.hidden = false;
+        if (!referralSetupReady) {
+          showToast("Referral setup could not be confirmed. Refresh before opening a mining box.");
+        }
         await loadGameState(user);
 
       } catch (error) {
+        gameShell.hidden = false;
         console.error(
           "Backend synchronization error:",
           error
@@ -516,6 +545,7 @@
 
     } else {
       backendSyncedUid = null;
+      referralSetupReady = false;
 
       closeProfilePanel();
 
@@ -909,6 +939,7 @@
   $("#boxGrid").addEventListener("click", async event => {
     const unlockButton = event.target.closest("[data-unlock-island]");
     if (unlockButton) {
+      if (!referralSetupReady) { showToast("Referral setup is not ready. Refresh before unlocking an island."); return; }
       unlockButton.disabled = true;
       try {
         const user = auth.currentUser;
@@ -922,6 +953,7 @@
     }
     const button = event.target.closest("[data-box]");
     if (!button || button.disabled) return;
+    if (!referralSetupReady) { showToast("Referral setup is not ready. Refresh before opening a box."); return; }
     const boxNumber = Number(button.dataset.box) + 1;
     button.disabled = true;
     try {
