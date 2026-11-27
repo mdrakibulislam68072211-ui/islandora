@@ -684,7 +684,7 @@
   ];
 
   // ==========================================
-  // PREVIEW STATE
+  // SERVER-AUTHORITATIVE GAME STATE
   // ==========================================
 
   const DEFAULT_STORAGE_CAP = 1500;
@@ -707,7 +707,7 @@
   }
 
   // ==========================================
-  // UNLOCK STATUS - PREVIEW
+  // SERVER-AUTHORITATIVE UNLOCK STATUS
   // ==========================================
 
   function isUnlocked(index) {
