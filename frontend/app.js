@@ -96,7 +96,20 @@
     "#storageProgressText",
     "#storagePercentage",
     "#storageProgressFill",
-    "#storagePanel"
+    "#storagePanel",
+    "#accountLoading",
+    "#spinWheel",
+    "#spinWheelLabels",
+    "#spinRewardValue",
+    "#spinMessage",
+    "#spinButton",
+    "#spinAdButton",
+    "#spinCheckButton",
+    "#spinClaimButton",
+    "#adminSpinRewards",
+    "#adminSpinEnabled",
+    "#adminSaveSpin",
+    "#adminSpinMessage"
   ];
 
   const missingElements = requiredElements.filter(
