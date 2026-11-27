@@ -1053,16 +1053,41 @@
     }
   });
 
-  let adsterraSettingId = null;
+  let adsterraSettingId = null, monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
+  let monetagSdkPromise = null;
+  async function loadMonetagSdk() {
+    if (monetagSdkPromise) return monetagSdkPromise;
+    monetagSdkPromise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-islandora-monetag="1"]');
+      if (existing) { resolve(); return; }
+      const script = document.createElement("script");
+      script.src = monetagSdkUrl;
+      script.async = true;
+      script.dataset.zone = monetagZone;
+      script.dataset.sdk = "show_" + monetagZone;
+      script.dataset.islandoraMonetag = "1";
+      script.onload = resolve;
+      script.onerror = () => { monetagSdkPromise = null; reject(new Error("Monetag SDK could not be loaded.")); };
+      document.head.appendChild(script);
+    });
+    return monetagSdkPromise;
+  }
   async function loadAdPlacements(user) {
     try {
       const data = await apiRequest(user, "/api/ads/placements");
       const ad = data.ads?.find(item => item.provider === "Adsterra" && item.ad_type === "direct_link");
       adsterraSettingId = ad?.id || null;
       $("#adsterraCard").hidden = !adsterraSettingId;
+      const rewarded = data.ads?.find(item => item.provider === "Monetag" && item.ad_type === "rewarded");
+      monetagSettingId = rewarded?.id || null;
+      monetagZone = rewarded?.placement_id || null;
+      try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
+      $("#monetagCard").hidden = !(monetagSettingId && monetagZone && monetagSdkUrl);
     } catch (error) {
       adsterraSettingId = null;
       $("#adsterraCard").hidden = true;
+      monetagSettingId = null; monetagZone = null; monetagSdkUrl = null;
+      $("#monetagCard").hidden = true;
     }
   }
   $("#adsterraButton").addEventListener("click", async () => {
@@ -1084,6 +1109,28 @@
       $("#adsterraMessage").textContent = error.message;
     } finally {
       $("#adsterraButton").disabled = false;
+    }
+  });
+
+  $("#monetagButton").addEventListener("click", async () => {
+    const button = $("#monetagButton"), message = $("#monetagMessage");
+    if (!monetagSettingId || !monetagZone || !monetagSdkUrl || button.disabled) return;
+    button.disabled = true; message.textContent = "Preparing verified ad...";
+    try {
+      const event = await apiRequest(auth.currentUser, "/api/ads/monetag/start", "POST", { ad_setting_id: monetagSettingId });
+      await loadMonetagSdk();
+      const show = window["show_" + monetagZone];
+      if (typeof show !== "function") throw new Error("Monetag ad function is unavailable.");
+      const result = await show({ ymid: event.ymid, requestVar: "islandora_reward_button" });
+      if (result?.reward_event_type === "valued") {
+        message.textContent = "Ad confirmed by Monetag. Coins are being credited by the server.";
+      } else {
+        message.textContent = "No valued impression was confirmed. No Coins were awarded.";
+      }
+    } catch (error) {
+      message.textContent = error.message || "Ad unavailable. Please try again later.";
+    } finally {
+      button.disabled = false;
     }
   });
 
@@ -1158,6 +1205,7 @@
         provider, ad_type: type, name: $("#adminAdName").value.trim(),
         direct_link_url: $("#adminAdUrl").value.trim(),
         placement_id: $("#adminAdPlacement").value.trim(),
+        sdk_script_url: $("#adminAdSdkUrl").value.trim(),
         cooldown_hours: Number($("#adminAdCooldown").value),
         daily_limit: Number($("#adminAdDailyLimit").value),
         reward_coins: Number($("#adminAdReward").value),
