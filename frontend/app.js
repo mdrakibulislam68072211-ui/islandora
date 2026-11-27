@@ -1104,11 +1104,40 @@
         `Users: ${data.users} · Gems: ${data.total_gems.toLocaleString()} · Coins: ${data.total_coins.toLocaleString()} · Pending withdrawals: ${data.pending_withdrawals} · Valid referrals: ${data.valid_referrals}`;
       await loadAdminIslandConfig(user);
       await loadAdminWithdrawals(user);
+      await loadAdminAds(user);
     } catch (error) {
       adminPanel.hidden = true;
       adminNavItem.hidden = true;
     }
   }
+
+  async function loadAdminAds(user) {
+    const data = await apiRequest(user, "/api/admin/ads");
+    const list = $("#adminAdsList"); list.replaceChildren();
+    if (!data.ads.length) { list.textContent = "No ad placements configured."; return; }
+    data.ads.forEach(ad => {
+      const row = document.createElement("div"); row.className = "withdrawal-history-row";
+      row.textContent = `${ad.provider} · ${ad.ad_type} · ${ad.name} · ${ad.enabled ? "ENABLED" : "DISABLED"} · cooldown ${ad.cooldown_hours}h · daily ${ad.daily_limit}`;
+      list.appendChild(row);
+    });
+  }
+  $("#adminSaveAd").addEventListener("click", async () => {
+    const provider = $("#adminAdProvider").value;
+    const type = provider === "Adsterra" ? "direct_link" : "rewarded";
+    try {
+      await apiRequest(auth.currentUser, "/api/admin/ads", "POST", {
+        provider, ad_type: type, name: $("#adminAdName").value.trim(),
+        direct_link_url: $("#adminAdUrl").value.trim(),
+        placement_id: $("#adminAdPlacement").value.trim(),
+        cooldown_hours: Number($("#adminAdCooldown").value),
+        daily_limit: Number($("#adminAdDailyLimit").value),
+        reward_coins: Number($("#adminAdReward").value),
+        enabled: $("#adminAdEnabled").checked
+      });
+      $("#adminAdMessage").textContent = "Ad settings saved.";
+      await loadAdminAds(auth.currentUser);
+    } catch (error) { $("#adminAdMessage").textContent = error.message; }
+  });
 
   adminIslandNumber.addEventListener("change", async () => {
     try { await loadAdminIslandConfig(auth.currentUser); }
