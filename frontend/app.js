@@ -814,6 +814,18 @@
 
     renderIslandList();
     renderBoxes();
+    renderMiningProjection();
+  }
+
+  function renderMiningProjection() {
+    const allIslands = gameStateData?.islands || [];
+    const daily = allIslands.reduce((total, island) =>
+      total + (island.boxes || []).reduce((sum, box) =>
+        sum + Number(box.rate_coins_per_day || 0) * Number(box.open_count || 0), 0), 0);
+    const dailyElement = $("#dailyMiningProjection");
+    const monthlyElement = $("#monthlyMiningProjection");
+    if (dailyElement) dailyElement.textContent = daily.toLocaleString(undefined, { maximumFractionDigits: 2 }) + " Coins/day";
+    if (monthlyElement) monthlyElement.textContent = (daily * 30).toLocaleString(undefined, { maximumFractionDigits: 2 }) + " Coins/30 days";
   }
 
   // ==========================================
@@ -1348,6 +1360,7 @@
       adminNavItem.hidden = false;
       $("#adminOverview").textContent =
         `Users: ${data.users} · Gems: ${data.total_gems.toLocaleString()} · Coins: ${data.total_coins.toLocaleString()} · Pending withdrawals: ${data.pending_withdrawals} · Valid referrals: ${data.valid_referrals}`;
+      await loadAdminSignupBonus(user);
       await loadAdminIslandConfig(user);
       await loadAdminWithdrawals(user);
       await loadAdminAds(user);
@@ -1357,6 +1370,25 @@
       adminNavItem.hidden = true;
     }
   }
+
+  async function loadAdminSignupBonus(user) {
+    const data = await apiRequest(user, "/api/admin/signup-bonus");
+    $("#adminSignupBonus").value = Number(data.signup_bonus_gems || 0);
+  }
+
+  $("#adminSaveSignupBonus").addEventListener("click", async () => {
+    const message = $("#adminSignupBonusMessage");
+    const amount = Number($("#adminSignupBonus").value);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1000000000) {
+      message.textContent = "Enter a whole number from 0 to 1,000,000,000.";
+      return;
+    }
+    try {
+      await apiRequest(auth.currentUser, "/api/admin/signup-bonus", "POST", { signup_bonus_gems: amount });
+      message.textContent = "Signup bonus saved. This applies only to new accounts.";
+      await loadAdminSignupBonus(auth.currentUser);
+    } catch (error) { message.textContent = error.message; }
+  });
 
   async function loadAdminSpin(user) {
     const data = await apiRequest(user, "/api/admin/spin");
