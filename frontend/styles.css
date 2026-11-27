@@ -1147,3 +1147,6 @@ button { cursor: pointer; }
 .admin-section [hidden] { display:none !important; }
 
 #adminNavItem[hidden] { display:none !important; }
+
+#adsterraCard[hidden] { display:none !important; }
+#adsterraMessage { display:block; margin-top:10px; color:#b9d5d0; }
