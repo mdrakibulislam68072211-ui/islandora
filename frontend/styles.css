@@ -1119,3 +1119,17 @@ button { cursor: pointer; }
 }
 .exchange-preview { margin:14px 0; color:#8fffd1; font-weight:700; }
 .wallet-exchange-card button:disabled { opacity:.45; cursor:not-allowed; }
+
+
+.withdrawal-card { margin-top: 18px; }
+.withdrawal-card h3 { margin: 0 0 8px; }
+.withdrawal-card select {
+  width:100%; box-sizing:border-box; padding:13px 14px;
+  border:1px solid #426c6a; border-radius:10px;
+  background:#071f2a; color:#fff; font:inherit;
+}
+.withdrawal-history { margin-top:16px; }
+.withdrawal-history-row {
+  padding:10px 0; border-top:1px solid rgba(150,210,200,.18);
+  color:#d8ece7; font-size:13px; line-height:1.5;
+}
