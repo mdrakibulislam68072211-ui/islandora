@@ -19,7 +19,7 @@ window.APP_CONFIG = {
   },
 
   TELEGRAM: {
-    BOT_USERNAME: "YOUR_BOT_USERNAME"
+    BOT_USERNAME: "Islandora_Bot"
   },
 
   SETTINGS: {
