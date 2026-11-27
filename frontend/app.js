@@ -523,12 +523,12 @@
         }
 
         referralSetupReady = await waitForReferralSetup(user.uid);
-        if (!referralSetupReady) {
-          showToast("Referral setup could not be confirmed. Refresh before opening a mining box.");
-        }
         await loadGameState(user);
         $("#accountLoading").hidden = true;
         gameShell.hidden = false;
+        if (!referralSetupReady) {
+          showToast("Referral setup could not be confirmed. Refresh before opening a mining box.");
+        }
 
       } catch (error) {
         $("#accountLoading").hidden = true;
