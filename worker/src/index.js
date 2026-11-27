@@ -6,9 +6,11 @@ let jwksCache = null, jwksExpiresAt = 0;
 const PROJECT = "islandora-c1f7b";
 const JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 const CORS = {
-  "Access-Control-Allow-Origin": "*",
+  // Only the dedicated integration preview may call this staging API.
+  "Access-Control-Allow-Origin": "https://feature-complete-game-integr.islandora.pages.dev",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Vary": "Origin",
   "Content-Type": "application/json"
 };
 const ISLAND_UNLOCK = [500,1000,2000,4000,8000,16000,32000,64000,128000,256000];
