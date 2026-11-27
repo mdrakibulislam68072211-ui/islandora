@@ -565,6 +565,13 @@
 
           </div>
 
+          <div class="live-mining-status"><span class="live-mining-dot"></span><strong>LIVE MINING</strong><span>Mining is active</span></div>
+          <div class="mining-projection-grid" aria-live="polite">
+            <div class="mining-projection-card"><span>DAILY MINING</span><strong id="dailyMiningProjection">0 Coins/day</strong></div>
+            <div class="mining-projection-card"><span>MONTHLY PROJECTION</span><strong id="monthlyMiningProjection">0 Coins/30 days</strong></div>
+          </div>
+          <p class="mining-projection-note">Estimated from all opened boxes across your islands. Actual pending and claimed Coins are shown separately.</p>
+
           <div class="box-grid" id="boxGrid"></div>
 
           <div class="storage-panel" id="storagePanel">
@@ -693,6 +700,14 @@
           <div class="wallet-exchange-card">
             <h3>Overview</h3>
             <div id="adminOverview" class="admin-overview">Loading...</div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Signup Bonus</h3>
+            <p>Set the Gems granted once to newly registered accounts. Existing accounts will not be changed.</p>
+            <label for="adminSignupBonus">Signup bonus (Gems)</label>
+            <input id="adminSignupBonus" type="number" min="0" max="1000000000" step="1">
+            <button class="open-button" id="adminSaveSignupBonus" type="button">Save Signup Bonus</button>
+            <small id="adminSignupBonusMessage"></small>
           </div>
           <div class="wallet-exchange-card">
             <h3>Island Configuration</h3>
