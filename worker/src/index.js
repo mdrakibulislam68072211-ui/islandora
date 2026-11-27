@@ -1,3 +1,202 @@
+// Islandora game API — staging review build only.
+// Preserves the existing Firebase auth-sync and signup-bonus behavior.
+// Do not deploy until staging tests and explicit production approval.
+
+let jwksCache = null, jwksExpiresAt = 0;
+const PROJECT = "islandora-c1f7b";
+const JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Content-Type": "application/json"
+};
+const ISLAND_UNLOCK = [500,1000,2000,4000,8000,16000,32000,64000,128000,256000];
+const BOX_PRICES_1 = [10,20,30,50,100,150,200,300,500,1000];
+const BOX_RATES_1 = [2,4,6,10,20,30,40,50,100,200];
+// Initial defaults for Islands 2–10: box prices scale 2x per island;
+// mining rates scale 1.5x per island. Admin-configurable in a later admin API.
+const ISLAND_ONE_STORAGE_CAP = 1500, CLAIM_MIN = 5, EXCHANGE_FEE_BPS = 100;
+
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:CORS});}
+function b64(v){v=v.replace(/-/g,"+").replace(/_/g,"/");v=v.padEnd(Math.ceil(v.length/4)*4,"=");return Uint8Array.from(atob(v),c=>c.charCodeAt(0));}
+function jwtPart(v){return JSON.parse(new TextDecoder().decode(b64(v)));}
+async function keys(force=false){
+  if(!force&&jwksCache&&Date.now()<jwksExpiresAt)return jwksCache;
+  const r=await fetch(JWKS_URL,{cf:{cacheTtl:3600,cacheEverything:true}});
+  if(!r.ok)throw new Error("Firebase key lookup failed");
+  const d=await r.json();jwksCache=d.keys;jwksExpiresAt=Date.now()+3600000;return jwksCache;
+}
+async function auth(req){
+  const h=req.headers.get("Authorization")||"";
+  if(!h.startsWith("Bearer "))throw new Error("Authentication required");
+  const p=h.slice(7).trim().split(".");
+  if(p.length!==3)throw new Error("Invalid token");
+  const head=jwtPart(p[0]),claims=jwtPart(p[1]);
+  if(head.alg!=="RS256"||!head.kid)throw new Error("Invalid token algorithm");
+  let k=(await keys()).find(x=>x.kid===head.kid);
+  if(!k)k=(await keys(true)).find(x=>x.kid===head.kid);
+  if(!k)throw new Error("Unknown signing key");
+  const pub=await crypto.subtle.importKey("jwk",k,{name:"RSASSA-PKCS1-v1_5",hash:"SHA-256"},false,["verify"]);
+  if(!await crypto.subtle.verify("RSASSA-PKCS1-v1_5",pub,b64(p[2]),new TextEncoder().encode(p[0]+"."+p[1])))throw new Error("Invalid signature");
+  const now=Math.floor(Date.now()/1000);
+  if(claims.aud!==PROJECT||claims.iss!=="https://securetoken.google.com/"+PROJECT||!claims.sub||claims.sub.length>128||claims.sub!==claims.user_id||!claims.exp||claims.exp<=now||!claims.iat||claims.iat>now+300||!claims.auth_time||claims.auth_time>now+300)throw new Error("Expired or invalid token");
+  return claims;
+}
+function cfg(island,box){
+  const factor=Math.pow(2,island-1),rateFactor=Math.pow(1.5,island-1);
+  return {price:Math.round(BOX_PRICES_1[box-1]*factor),rate:Math.round(BOX_RATES_1[box-1]*rateFactor)};
+}
+function idem(v){return typeof v==="string"&&/^[A-Za-z0-9_-]{12,100}$/.test(v);}
+async function body(req){try{return await req.json();}catch{return null;}}
+async function getUser(env,uid){return env.DB.prepare("SELECT firebase_uid,email,gems,coins,signup_bonus_granted,account_status FROM users WHERE firebase_uid=?").bind(uid).first();}
+async function ensureActive(env,uid){const u=await getUser(env,uid);if(!u||u.account_status!=="active")throw new Error("Account unavailable");return u;}
+
+// Settles each unlocked island independently. The guarded timestamp update prevents
+// two concurrent requests from crediting the same elapsed interval twice.
+async function settle(env,uid){
+  const now=Date.now();
+  const {results=[]}=await env.DB.prepare("SELECT island_number,pending_coins,last_mining_at FROM user_islands WHERE firebase_uid=? AND is_unlocked=1").bind(uid).all();
+  for(const row of results){
+    if(!row.last_mining_at)continue;
+    const then=Date.parse(String(row.last_mining_at).replace(" ","T")+"Z");
+    if(!Number.isFinite(then)||now<=then)continue;
+    const {results:boxes=[]}=await env.DB.prepare("SELECT box_number,open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=?").bind(uid,row.island_number).all();
+    let perDay=0;for(const b of boxes)perDay+=b.open_count*cfg(row.island_number,b.box_number).rate;
+    if(perDay<=0)continue;
+    const elapsed=(now-then)/86400000;
+    const earned=elapsed*perDay;
+    if(earned<=0)continue;
+    const cap = Number(row.island_number) === 1 ? ISLAND_ONE_STORAGE_CAP : Number.MAX_SAFE_INTEGER;
+    const newPending=Math.min(cap,Number(row.pending_coins||0)+earned);
+    const timestamp=new Date(now).toISOString().slice(0,19).replace("T"," ");
+    await env.DB.prepare("UPDATE user_islands SET pending_coins=?,last_mining_at=? WHERE firebase_uid=? AND island_number=? AND last_mining_at=?")
+      .bind(newPending,timestamp,uid,row.island_number,row.last_mining_at).run();
+  }
+}
+async function gameState(env,uid){
+  await settle(env,uid);
+  const user=await getUser(env,uid);
+  const {results:islands=[]}=await env.DB.prepare("SELECT island_number,is_unlocked,pending_coins,last_mining_at FROM user_islands WHERE firebase_uid=? ORDER BY island_number").bind(uid).all();
+  const {results:boxes=[]}=await env.DB.prepare("SELECT island_number,box_number,open_count FROM user_island_boxes WHERE firebase_uid=? ORDER BY island_number,box_number").bind(uid).all();
+  const islandRows=Array.from({length:10},(_,i)=>{
+    const n=i+1,stored=islands.find(x=>x.island_number===n),isUnlocked=!!stored?.is_unlocked;
+    const b=Array.from({length:10},(_,j)=>{const c=cfg(n,j+1);return {box_number:j+1,price_gems:c.price,rate_coins_per_day:c.rate,open_count:boxes.find(x=>x.island_number===n&&x.box_number===j+1)?.open_count||0};});
+    return {island_number:n,unlock_cost_gems:ISLAND_UNLOCK[i],is_unlocked:isUnlocked,pending_coins:Number(stored?.pending_coins||0),boxes:b};
+  });
+  return {success:true,user:{gems:user.gems,coins:user.coins},exchange:{coins_per_gem:1,fee_percent:1},islands:islandRows};
+}
+async function syncUser(req,env){
+  let c;try{c=await auth(req);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
+  const uid=c.sub,email=c.email||"";if(!email)return json({success:false,error:"Email not available"},400);
+  try{
+    await env.DB.prepare("INSERT INTO users(firebase_uid,email,gems,coins,signup_bonus_granted,account_status) VALUES(?,?,1000,0,1,'active') ON CONFLICT(firebase_uid) DO NOTHING").bind(uid,email).run();
+    await env.DB.prepare("UPDATE users SET email=?,updated_at=CURRENT_TIMESTAMP WHERE firebase_uid=?").bind(email,uid).run();
+    const user=await getUser(env,uid);if(!user||user.account_status!=="active")return json({success:false,error:"Account unavailable"},403);
+    return json({success:true,user});
+  }catch(e){console.error(e);return json({success:false,error:"Unable to synchronize account"},500);}
+}
+async function unlock(env,uid,b){
+  const n=Number(b?.island_number);if(!Number.isInteger(n)||n<1||n>10)return json({success:false,error:"Invalid island"},400);
+  const idemKey=b.idempotency_key;if(!idem(idemKey))return json({success:false,error:"A valid idempotency_key is required"},400);
+  const price=ISLAND_UNLOCK[n-1];
+  if(n>1){const prev=await env.DB.prepare("SELECT COUNT(*) AS total, COALESCE(MIN(open_count),0) AS min_open FROM user_island_boxes WHERE firebase_uid=? AND island_number=?").bind(uid,n-1).first();if(Number(prev?.total)!==10||Number(prev?.min_open)<10)return json({success:false,error:"Open all 10 boxes 10 times on the previous island first"},409);}
+  const already=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
+  if(already?.is_unlocked)return json({success:true,message:"Island already unlocked"});
+  const stmts=[
+    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=? AND NOT EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1) AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?) AND (?=1 OR EXISTS(SELECT 1 FROM user_island_boxes WHERE firebase_uid=? AND island_number=? GROUP BY firebase_uid,island_number HAVING COUNT(*)=10 AND MIN(open_count)=10))")
+      .bind(price,uid,price,uid,n,idemKey,n,uid,n-1),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ? ,?,'Gems',?,?,?, ?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-price,"island_unlock","Unlock Island "+n,String(n),idemKey),
+    env.DB.prepare("INSERT INTO user_islands(id,firebase_uid,island_number,is_unlocked,pending_coins,last_mining_at,unlocked_at) SELECT ?,?,?,1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='island_unlock') ON CONFLICT(firebase_uid,island_number) DO UPDATE SET is_unlocked=1,last_mining_at=CURRENT_TIMESTAMP,unlocked_at=CURRENT_TIMESTAMP")
+      .bind(crypto.randomUUID(),uid,n,idemKey,uid)
+  ];
+  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);return json({success:true,island_number:n,cost_gems:price});}
+  catch(e){console.error(e);return json({success:false,error:"Island unlock failed"},500);}
+}
+async function processReferralOutbox(env, onlyUid=null) {
+  if (!env.REFERRAL_API_URL || !env.INTERNAL_API_SECRET) return;
+  const sql = onlyUid
+    ? "SELECT id,referred_uid,attempts FROM referral_callback_outbox WHERE status='pending' AND next_attempt_at<=CURRENT_TIMESTAMP AND referred_uid=? ORDER BY created_at LIMIT 10"
+    : "SELECT id,referred_uid,attempts FROM referral_callback_outbox WHERE status='pending' AND next_attempt_at<=CURRENT_TIMESTAMP ORDER BY created_at LIMIT 10";
+  const q = onlyUid ? env.DB.prepare(sql).bind(onlyUid) : env.DB.prepare(sql);
+  const { results=[] } = await q.all();
+  for (const item of results) {
+    try {
+      const response = await fetch(env.REFERRAL_API_URL + "/internal/referral/box-opened", {
+        method:"POST", headers:{"Content-Type":"application/json","X-Internal-Secret":env.INTERNAL_API_SECRET},
+        body:JSON.stringify({referred_uid:item.referred_uid})
+      });
+      if (response.ok) {
+        await env.DB.prepare("UPDATE referral_callback_outbox SET status='delivered',updated_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=? AND status='pending'").bind(item.id).run();
+      } else {
+        const delay=Math.min(21600,60*Math.pow(2,Math.min(Number(item.attempts)||0,8)));
+        await env.DB.prepare("UPDATE referral_callback_outbox SET attempts=attempts+1,next_attempt_at=datetime('now','+'||?||' seconds'),last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(delay,"HTTP "+response.status,item.id).run();
+      }
+    } catch (error) {
+      const delay=Math.min(21600,60*Math.pow(2,Math.min(Number(item.attempts)||0,8)));
+      await env.DB.prepare("UPDATE referral_callback_outbox SET attempts=attempts+1,next_attempt_at=datetime('now','+'||?||' seconds'),last_error='network error',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(delay,item.id).run();
+    }
+  }
+}
+
+async function openBox(env,uid,b){
+  const n=Number(b?.island_number),box=Number(b?.box_number),key=b?.idempotency_key;
+  if(!Number.isInteger(n)||n<1||n>10||!Number.isInteger(box)||box<1||box>10||!idem(key))return json({success:false,error:"Invalid island, box or idempotency key"},400);
+  const unlocked=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
+  if(!unlocked?.is_unlocked)return json({success:false,error:"Island is locked"},403);
+  await settle(env,uid);
+  const {price}=cfg(n,box);
+  const stmts=[
+    env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=? AND EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1) AND COALESCE((SELECT open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=? AND box_number=?),0)<10 AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      .bind(price,uid,price,uid,n,uid,n,box,key),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Gems',?,'box_open',?,?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-price,"Open Island "+n+" Box "+box,String(n)+":"+String(box),key),
+    env.DB.prepare("INSERT INTO user_island_boxes(id,firebase_uid,island_number,box_number,open_count) SELECT ?,?,?,?,1 WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open') ON CONFLICT(firebase_uid,island_number,box_number) DO UPDATE SET open_count=MIN(10,open_count+1),updated_at=CURRENT_TIMESTAMP WHERE user_island_boxes.open_count<10")
+      .bind(crypto.randomUUID(),uid,n,box,key,uid),
+    env.DB.prepare("UPDATE user_islands SET last_mining_at=CURRENT_TIMESTAMP WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')")
+      .bind(uid,n,key,uid),
+    env.DB.prepare("INSERT OR IGNORE INTO referral_callback_outbox(id,referred_uid) SELECT ?,? WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='box_open')").bind(crypto.randomUUID(),uid,key,uid),
+  ];
+  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);
+    try{await processReferralOutbox(env,uid);}catch(err){console.error('Referral outbox deferred');}
+    return json({success:true,island_number:n,box_number:box,price_gems:price});}
+  catch(e){console.error(e);return json({success:false,error:"Box opening failed"},500);}
+}
+async function claim(env,uid,b){
+  const n=Number(b?.island_number),key=b?.idempotency_key;
+  if(!Number.isInteger(n)||n<1||n>10||!idem(key))return json({success:false,error:"Invalid island or idempotency key"},400);
+  await settle(env,uid);
+  const row=await env.DB.prepare("SELECT pending_coins FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1").bind(uid,n).first();
+  const pending=Number(row?.pending_coins||0);
+  const amount=Math.floor(pending);
+  if(amount<CLAIM_MIN)return json({success:false,error:"At least 5 whole pending Coins are required"},409);
+  const stmts=[
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'mining_claim',?,?,? WHERE EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1 AND pending_coins>=?) AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      .bind(crypto.randomUUID(),uid,amount,"Claim Island "+n,String(n),key,uid,n,amount,key),
+    env.DB.prepare("UPDATE user_islands SET pending_coins=pending_coins-? WHERE firebase_uid=? AND island_number=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='mining_claim')")
+      .bind(amount,uid,n,key,uid),
+    env.DB.prepare("UPDATE users SET coins=coins+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='mining_claim')")
+      .bind(amount,uid,key,uid)
+  ];
+  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Claim unavailable or duplicate request"},409);return json({success:true,claimed_coins:amount});}
+  catch(e){console.error(e);return json({success:false,error:"Claim failed"},500);}
+}
+async function exchange(env,uid,b){
+  const amount=Number(b?.coins),key=b?.idempotency_key;
+  if(!Number.isSafeInteger(amount)||amount<1||amount>1000000000||!idem(key))return json({success:false,error:"Enter a valid whole Coin amount and idempotency key"},400);
+  const fee=Math.ceil(amount*EXCHANGE_FEE_BPS/10000),gems=amount-fee;if(gems<1)return json({success:false,error:"Amount is too small after fee"},400);
+  const stmts=[
+    env.DB.prepare("UPDATE users SET coins=coins-? WHERE firebase_uid=? AND coins>=?").bind(amount,uid,amount),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'coin_to_gem_exchange','Exchange Coins to Gems (1% fee)',?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-amount,String(gems),key),
+    env.DB.prepare("UPDATE users SET gems=gems+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='coin_to_gem_exchange')").bind(gems,uid,key,uid),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Gems',?,'coin_to_gem_exchange','Received Gems after 1% exchange fee',?,? WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='coin_to_gem_exchange')")
+      .bind(crypto.randomUUID(),uid,gems,String(amount),key+"_gems",key,uid)
+  ];
+  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Coins or duplicate request"},409);return json({success:true,coins_spent:amount,fee_coins:fee,gems_received:gems,fee_percent:1});}
+  catch(e){console.error(e);return json({success:false,error:"Exchange failed"},500);}
+}
 export default {async scheduled(controller,env,ctx){await processReferralOutbox(env);},async fetch(req,env){
   const u=new URL(req.url);
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
