@@ -110,7 +110,9 @@
 
   function getReferralFromURL() {
     const params = new URLSearchParams(location.search);
-    const code = (params.get("ref") || "").trim().toLowerCase();
+    const telegramStart = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "";
+    const startCode = telegramStart.match(/^ref_([a-f0-9]{16})$/i)?.[1] || "";
+    const code = (params.get("ref") || startCode || "").trim().toLowerCase();
 
     if (/^[a-f0-9]{16}$/.test(code)) {
       sessionStorage.setItem(PENDING_KEY, code);
@@ -361,7 +363,7 @@
     const view = createView();
 
     const link = referralCode
-      ? location.origin + location.pathname + "?ref=" + referralCode
+      ? "https://t.me/Islandora_Bot?start=ref_" + referralCode
       : "";
 
     view.innerHTML = `
