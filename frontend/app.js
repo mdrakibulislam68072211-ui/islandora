@@ -1532,7 +1532,12 @@
     if (adminSection) adminSection.hidden = target !== "#adminPanel";
 
     const mainWorld = document.querySelector(".main-world");
-    if (mainWorld) mainWorld.classList.toggle("single-section-view", !["#home", "#mining"].includes(target));
+    const gameLayout = $("#home");
+    const dedicatedView = !["#home", "#mining"].includes(target);
+    if (mainWorld) mainWorld.classList.toggle("single-section-view", dedicatedView);
+    if (gameLayout) gameLayout.classList.toggle("dedicated-view", dedicatedView);
+    const islandSidebar = document.querySelector(".island-sidebar");
+    if (islandSidebar) islandSidebar.hidden = dedicatedView;
 
     if (target === "#home") {
       $("#home")?.scrollIntoView({ behavior: "smooth", block: "start" });
