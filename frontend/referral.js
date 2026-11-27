@@ -202,6 +202,7 @@
       Math.abs(signedIn - created) > 120000
     ) {
       sessionStorage.removeItem(REGISTER_KEY);
+      sessionStorage.removeItem(PENDING_KEY);
       return true;
     }
 
