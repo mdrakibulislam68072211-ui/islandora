@@ -136,14 +136,14 @@ async function creditReferralCommissions(env,referredUid){
   // fractional commission is preserved until the referrer claims whole Coins.
   await env.DB.prepare(`INSERT OR IGNORE INTO referral_commission_ledger
     (id,referrer_uid,referred_uid,source_transaction_id,spent_gems,commission_milli_coins)
-    SELECT ?,r.referrer_uid,r.referred_uid,w.id,ABS(w.amount),ABS(w.amount)*150
+    SELECT lower(hex(randomblob(16))),r.referrer_uid,r.referred_uid,w.id,ABS(w.amount),ABS(w.amount)*150
     FROM referrals r
     JOIN wallet_transactions w ON w.firebase_uid=r.referred_uid
     WHERE r.referred_uid=? AND r.is_valid=1
       AND w.currency='Gems' AND w.amount<0
       AND w.transaction_type IN ('box_open','island_unlock')
       AND NOT EXISTS(SELECT 1 FROM referral_commission_ledger l WHERE l.source_transaction_id=w.id)`)
-    .bind(crypto.randomUUID(),referredUid).run();
+    .bind(referredUid).run();
 }
 async function referralCommissionInfo(env,uid){
   const row=await env.DB.prepare(`SELECT
