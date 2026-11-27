@@ -497,6 +497,7 @@
     if (user) {
       authScreen.hidden = true;
       gameShell.hidden = true;
+      $("#accountLoading").hidden = false;
 
       updateProfile(user);
 
@@ -522,13 +523,15 @@
         }
 
         referralSetupReady = await waitForReferralSetup(user.uid);
-        gameShell.hidden = false;
         if (!referralSetupReady) {
           showToast("Referral setup could not be confirmed. Refresh before opening a mining box.");
         }
         await loadGameState(user);
+        $("#accountLoading").hidden = true;
+        gameShell.hidden = false;
 
       } catch (error) {
+        $("#accountLoading").hidden = true;
         gameShell.hidden = false;
         console.error(
           "Backend synchronization error:",
@@ -546,6 +549,7 @@
     } else {
       backendSyncedUid = null;
       referralSetupReady = false;
+      $("#accountLoading").hidden = true;
 
       closeProfilePanel();
 
