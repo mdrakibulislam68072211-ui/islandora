@@ -1083,6 +1083,8 @@
   });
 
   let spinAttemptId = null;
+  let spinRewardOptions = [];
+  let spinRotation = 0;
   let monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
   let monetagSdkPromise = null;
   async function loadMonetagSdk() {
@@ -1148,9 +1150,46 @@
     }
   });
 
+  function renderSpinWheel(options) {
+    const wheel = $("#spinWheel"), labels = $("#spinWheelLabels");
+    if (!wheel || !labels || !options?.length) return;
+    const total = options.reduce((sum,item) => sum + Number(item.probability_bps || 0),0);
+    if (total !== 10000) return;
+    let cursor = 0;
+    const stops = [];
+    labels.replaceChildren();
+    options.forEach((option,index) => {
+      const start = cursor / total * 360;
+      cursor += Number(option.probability_bps);
+      const end = cursor / total * 360;
+      const hue = (index * 43 + 150) % 360;
+      stops.push("hsl(" + hue + " 62% 42%) " + start + "deg " + end + "deg");
+      const center = (start + end) / 2;
+      const label = document.createElement("span");
+      label.textContent = Number(option.reward_coins).toLocaleString();
+      label.style.transform = "rotate(" + center + "deg) translateY(-82px) rotate(" + (-center) + "deg)";
+      labels.appendChild(label);
+    });
+    wheel.style.background = "conic-gradient(" + stops.join(",") + ")";
+  }
+
+  function animateSpinWheel(reward) {
+    const optionIndex = spinRewardOptions.findIndex(item => Number(item.reward_coins) === Number(reward));
+    if (optionIndex < 0) return;
+    const before = spinRewardOptions.slice(0,optionIndex).reduce((sum,item) => sum + Number(item.probability_bps),0);
+    const current = spinRewardOptions[optionIndex];
+    const center = (before + Number(current.probability_bps) / 2) / 10000 * 360;
+    const target = (360 - center) % 360;
+    const next = Math.ceil(spinRotation / 360) * 360 + 5 * 360 + target;
+    spinRotation = next;
+    $("#spinWheel").style.transform = "rotate(" + next + "deg)";
+  }
+
   async function loadSpinState(user) {
     try {
       const data = await apiRequest(user, "/api/spin/state");
+      spinRewardOptions = data.reward_options || [];
+      renderSpinWheel(spinRewardOptions);
       const attempt = data.attempt;
       spinAttemptId = attempt?.id || null;
       const spinButton = $("#spinButton");
@@ -1178,6 +1217,7 @@
           $("#spinMessage").textContent = "REWARD CLAIMED — Your next spin is available tomorrow.";
         }
       }
+      return data;
     } catch (error) {
       $("#spinButton").disabled = true;
       $("#spinAdButton").hidden = true;
@@ -1191,10 +1231,11 @@
     const button = $("#spinButton");
     button.disabled = true;
     try {
-      await apiRequest(auth.currentUser, "/api/spin", "POST", {
+      const result = await apiRequest(auth.currentUser, "/api/spin", "POST", {
         idempotency_key: makeIdempotencyKey()
       });
       await loadSpinState(auth.currentUser);
+      if (!result.already_spun) animateSpinWheel(Number(result.attempt?.reward_coins));
     } catch (error) {
       $("#spinMessage").textContent = error.message;
       button.disabled = false;
