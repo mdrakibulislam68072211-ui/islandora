@@ -1145,3 +1145,5 @@ button { cursor: pointer; }
 .admin-section label { display:block; color:#c8e2dc; font-size:13px; font-weight:700; }
 .admin-section button { margin:5px 5px 5px 0; }
 .admin-section [hidden] { display:none !important; }
+
+#adminNavItem[hidden] { display:none !important; }
