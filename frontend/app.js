@@ -439,6 +439,30 @@
     return data.user;
   }
 
+  async function apiRequest(user, path, method = "GET", payload = null) {
+    const token = await user.getIdToken();
+    const response = await fetch(API_BASE_URL + path, {
+      method,
+      headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+      body: payload ? JSON.stringify(payload) : undefined
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.success) throw new Error(data.message || data.error || "Game request failed.");
+    return data;
+  }
+
+  async function loadGameState(user) {
+    gameStateData = await apiRequest(user, "/api/game/state");
+    const wallet = gameStateData.user || {};
+    $("#gemBalance").textContent = Number(wallet.gems || 0).toLocaleString();
+    $("#coinBalance").textContent = Number(wallet.coins || 0).toLocaleString();
+    pendingCoins = Number(gameStateData.islands?.[selectedIsland]?.pending_coins || 0);
+    renderIsland();
+    updateStorage(pendingCoins);
+  }
+
+  function makeIdempotencyKey() { return crypto.randomUUID().replace(/-/g, ""); }
+
   // ==========================================
   // FIREBASE AUTH STATE LISTENER
   // ==========================================
@@ -469,8 +493,11 @@
             Number(backendUser.gems || 0).toLocaleString();
 
           backendSyncedUid = user.uid;
+        }
 
-          console.info(
+        await loadGameState(user);
+
+        console.info(
             "Islandora account synchronized with D1:",
             backendUser
           );
@@ -633,8 +660,7 @@
 
   let selectedIsland = 0;
 
-  const boxCounts = Array(10).fill(0);
-
+  let gameStateData = null;
   let pendingCoins = 0;
 
   // ==========================================
@@ -654,7 +680,7 @@
   // ==========================================
 
   function isUnlocked(index) {
-    return index === 0;
+    return !!gameStateData?.islands?.[index]?.is_unlocked;
   }
 
   // ==========================================
@@ -721,8 +747,9 @@
     $("#islandDescription").textContent =
       island.description;
 
+    const liveIsland = gameStateData?.islands?.[selectedIsland];
     $("#islandCost").textContent =
-      island.cost.toLocaleString() + " Gems";
+      Number(liveIsland?.unlock_cost_gems ?? island.cost).toLocaleString() + " Gems";
 
     $("#islandStatus").textContent =
       isUnlocked(selectedIsland)
@@ -746,24 +773,27 @@
     const grid = $("#boxGrid");
 
     if (!isUnlocked(selectedIsland)) {
+      const liveIsland = gameStateData?.islands?.[selectedIsland];
+      const previousComplete = selectedIsland === 0 ||
+        gameStateData?.islands?.[selectedIsland - 1]?.boxes?.every(box => box.open_count >= 10);
       grid.innerHTML = `
         <div class="locked-island-message">
           <div style="font-size:48px">🔒</div>
-
           <h3>${islands[selectedIsland].name}</h3>
-
-          <p>
-            Complete the previous island to unlock this island.
-          </p>
+          <p>Unlock this island to continue your mining journey.</p>
+          <p>Cost: 💎 ${Number(liveIsland?.unlock_cost_gems ?? islands[selectedIsland].cost).toLocaleString()} Gems</p>
+          ${previousComplete ? '<button type="button" class="open-button" data-unlock-island>Unlock Island</button>' : '<p>Open every box 10 times on the previous island first.</p>'}
         </div>
       `;
-
       $("#islandRate").textContent = "0 Coins/day";
       return;
     }
 
-    grid.innerHTML = prices.map((price, index) => {
-      const count = boxCounts[index];
+    const currentBoxes = gameStateData?.islands?.[selectedIsland]?.boxes || [];
+    grid.innerHTML = currentBoxes.map((box, index) => {
+      const price = Number(box.price_gems || prices[index]);
+      const rate = Number(box.rate_coins_per_day || rates[index]);
+      const count = Number(box.open_count || 0);
       const maxed = count >= 10;
 
       return `
@@ -804,10 +834,8 @@
       `;
     }).join("");
 
-    const totalRate = rates.reduce(
-      (sum, rate, index) => {
-        return sum + rate * boxCounts[index];
-      },
+    const totalRate = currentBoxes.reduce(
+      (sum, box) => sum + Number(box.rate_coins_per_day || 0) * Number(box.open_count || 0),
       0
     );
 
@@ -820,11 +848,8 @@
   // ==========================================
 
   function updateStorage(amount = pendingCoins) {
-    const current = Math.max(
-      0,
-      Math.min(Number(amount) || 0, STORAGE_CAP)
-    );
-
+    const cap = selectedIsland === 0 ? STORAGE_CAP : Number.MAX_SAFE_INTEGER;
+    const current = Math.max(0, Math.min(Number(amount) || 0, cap));
     pendingCoins = current;
 
     const percentage = (current / STORAGE_CAP) * 100;
@@ -836,7 +861,7 @@
       current.toFixed(2);
 
     $("#storageProgressText").textContent =
-      `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins`;
+      selectedIsland === 0 ? `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins` : `${current.toFixed(2)} Coins`;
 
     $("#storagePercentage").textContent =
       `${percentage.toFixed(1)}%`;
@@ -849,7 +874,7 @@
       current >= STORAGE_CAP
     );
 
-    $("#claimButton").disabled = true;
+    $("#claimButton").disabled = current < 5;
   }
 
   // ==========================================
@@ -865,16 +890,9 @@
 
       const index = Number(card.dataset.island);
 
-      if (!isUnlocked(index)) {
-        showToast(
-          "🔒 Complete the previous island to unlock this island."
-        );
-
-        return;
-      }
-
       selectedIsland = index;
       renderIsland();
+      updateStorage(gameStateData?.islands?.[index]?.pending_coins || 0);
     }
   );
 
@@ -882,18 +900,33 @@
   // CHEST CLICK
   // ==========================================
 
-  $("#boxGrid").addEventListener(
-    "click",
-    event => {
-      const button = event.target.closest("[data-box]");
-
-      if (!button || button.disabled) return;
-
-      showToast(
-        "Mining will be activated after secure backend integration."
-      );
+  $("#boxGrid").addEventListener("click", async event => {
+    const unlockButton = event.target.closest("[data-unlock-island]");
+    if (unlockButton) {
+      unlockButton.disabled = true;
+      try {
+        const user = auth.currentUser;
+        await apiRequest(user, "/api/game/island/unlock", "POST", {
+          island_number: selectedIsland + 1, idempotency_key: makeIdempotencyKey()
+        });
+        await loadGameState(user);
+        showToast("Island unlocked successfully!");
+      } catch (error) { showToast(error.message); unlockButton.disabled = false; }
+      return;
     }
-  );
+    const button = event.target.closest("[data-box]");
+    if (!button || button.disabled) return;
+    const boxNumber = Number(button.dataset.box) + 1;
+    button.disabled = true;
+    try {
+      const user = auth.currentUser;
+      await apiRequest(user, "/api/game/box/open", "POST", {
+        island_number: selectedIsland + 1, box_number: boxNumber, idempotency_key: makeIdempotencyKey()
+      });
+      await loadGameState(user);
+      showToast("Mining box opened successfully!");
+    } catch (error) { showToast(error.message); button.disabled = false; }
+  });
 
   // ==========================================
   // VIEW ALL ISLANDS
@@ -913,14 +946,19 @@
   // CLAIM COINS
   // ==========================================
 
-  $("#claimButton").addEventListener(
-    "click",
-    () => {
-      showToast(
-        "Coin claiming will be available after backend integration."
-      );
-    }
-  );
+  $("#claimButton").addEventListener("click", async () => {
+    const button = $("#claimButton");
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const user = auth.currentUser;
+      const result = await apiRequest(user, "/api/game/claim", "POST", {
+        island_number: selectedIsland + 1, idempotency_key: makeIdempotencyKey()
+      });
+      await loadGameState(user);
+      showToast(`Claimed ${Number(result.claimed_coins || 0).toLocaleString()} Coins!`);
+    } catch (error) { showToast(error.message); button.disabled = false; }
+  });
 
   // ==========================================
   // BOTTOM NAVIGATION
