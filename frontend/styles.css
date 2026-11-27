@@ -1244,3 +1244,10 @@ button { cursor: pointer; }
 
 .game-layout.dedicated-view { grid-template-columns: minmax(0, 1fr); }
 .game-layout.dedicated-view .main-world { width: 100%; max-width: 100%; }
+
+/* Honest, server-backed live mining status */
+.live-mining-status { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.live-mining-amount { color:#8fffd1; font-weight:900; font-variant-numeric:tabular-nums; }
+.live-mining-dot { opacity:.35; }
+.live-mining-dot.is-active { opacity:1; animation:liveMiningPulse 1.25s ease-in-out infinite; }
+@keyframes liveMiningPulse { 0%,100% { box-shadow:0 0 5px #52ffb2; transform:scale(1); } 50% { box-shadow:0 0 15px #52ffb2; transform:scale(1.18); } }
