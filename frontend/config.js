@@ -3,10 +3,10 @@ window.APP_CONFIG = {
   APP_NAME: "Islandora",
 
   API_BASE_URL:
-    "https://islandora-api.mdrakibulislam68072211.workers.dev",
+    "https://islandora-staging-api.mdrakibulislam68072211.workers.dev",
 
   REFERRAL_API_URL:
-    "https://islandora-referral-api.mdrakibulislam68072211.workers.dev",
+    "https://islandora-staging-referral-api.mdrakibulislam68072211.workers.dev",
 
   FIREBASE: {
     apiKey: "AIzaSyByOdbroiBMxmYcKwEQohbdoM2jhTNyRLE",
