@@ -237,8 +237,10 @@ async function reviewWithdrawal(env,uid,b){
   try{
     const r=await env.DB.batch(stmts);
     if(!r[0]?.meta?.changes)return json({success:false,error:"Withdrawal was already processed"},409);
-    await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,target_uid,details) VALUES(?,?,?,?,?)")
-      .bind(crypto.randomUUID(),"", "withdrawal_"+status,request.firebase_uid,JSON.stringify({withdrawal_id:id,amount:request.amount,note})).run();
+    try {
+      await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,target_uid,details) VALUES(?,?,?,?,?)")
+        .bind(crypto.randomUUID(),uid,"withdrawal_"+status,request.firebase_uid,JSON.stringify({withdrawal_id:id,amount:request.amount,note})).run();
+    } catch (logError) { console.error("Admin audit log write failed", logError); }
     return json({success:true,withdrawal_id:id,status,refunded:status==="rejected"});
   }catch(e){console.error(e);return json({success:false,error:"Withdrawal review failed"},500);}
 }
