@@ -685,6 +685,21 @@
             <button class="open-button" id="adminRefreshWithdrawals" type="button">Refresh Requests</button>
             <div id="adminWithdrawalList" class="withdrawal-history"></div>
           </div>
+          <div class="wallet-exchange-card">
+            <h3>📢 Ad Settings</h3>
+            <label for="adminAdProvider">Provider</label>
+            <select id="adminAdProvider"><option>Adsterra</option><option>Monetag</option></select>
+            <label for="adminAdName">Ad name</label><input id="adminAdName" type="text" maxlength="100">
+            <label for="adminAdUrl">Adsterra direct link (HTTPS)</label><input id="adminAdUrl" type="url" placeholder="https://...">
+            <label for="adminAdPlacement">Monetag placement ID</label><input id="adminAdPlacement" type="text">
+            <label for="adminAdCooldown">Cooldown hours</label><input id="adminAdCooldown" type="number" min="0" max="720" value="24">
+            <label for="adminAdDailyLimit">Daily limit</label><input id="adminAdDailyLimit" type="number" min="0" max="1000" value="1">
+            <label for="adminAdReward">Reward Coins (Monetag only)</label><input id="adminAdReward" type="number" min="0" value="0">
+            <label><input id="adminAdEnabled" type="checkbox"> Enable this ad placement</label>
+            <button class="open-button" id="adminSaveAd" type="button">Save Ad Settings</button>
+            <small id="adminAdMessage"></small>
+            <div id="adminAdsList" class="withdrawal-history"></div>
+          </div>
         </section>
       </section>
 
