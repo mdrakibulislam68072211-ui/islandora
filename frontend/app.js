@@ -687,7 +687,7 @@
   // PREVIEW STATE
   // ==========================================
 
-  const STORAGE_CAP = 1500;
+  const DEFAULT_STORAGE_CAP = 1500;
 
   let selectedIsland = 0;
 
@@ -748,7 +748,7 @@
                   unlocked
                     ? island.type
                     : index === 0
-                      ? "Unlock with 500 Gems"
+                      ? "Unlock with " + Number(gameStateData?.islands?.[index]?.unlock_cost_gems ?? island.cost).toLocaleString() + " Gems"
                       : "Complete Island " + index + " first"
                 }
               </span>
@@ -824,8 +824,8 @@
 
     const currentBoxes = gameStateData?.islands?.[selectedIsland]?.boxes || [];
     grid.innerHTML = currentBoxes.map((box, index) => {
-      const price = Number(box.price_gems || prices[index]);
-      const rate = Number(box.rate_coins_per_day || rates[index]);
+      const price = Number(box.price_gems ?? prices[index]);
+      const rate = Number(box.rate_coins_per_day ?? rates[index]);
       const count = Number(box.open_count || 0);
       const maxed = count >= 10;
       const canAfford = Number(gameStateData?.user?.gems || 0) >= price;
@@ -878,45 +878,37 @@
   }
 
   // ==========================================
-  // MINING STORAGE - PREVIEW
+  // MINING STORAGE - SERVER CONFIGURATION
   // ==========================================
 
   function updateStorage(amount = pendingCoins) {
-    const cap = selectedIsland === 0 ? STORAGE_CAP : Number.MAX_SAFE_INTEGER;
-    const current = Math.max(0, Math.min(Number(amount) || 0, cap));
-    pendingCoins = current;
-
-    const percentage = selectedIsland === 0
-      ? Math.min(100, (current / STORAGE_CAP) * 100)
-      : 0;
-
-    $("#pendingCoins").textContent =
-      current.toFixed(2);
-
-    $("#storageAmount").textContent =
-      current.toFixed(2);
-
-    $("#storageProgressText").textContent =
-      selectedIsland === 0 ? `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins` : `${current.toFixed(2)} Coins`;
-
-    $("#storagePercentage").textContent =
-      selectedIsland === 0 ? `${percentage.toFixed(1)}%` : "No fixed cap";
-    const capacityLabel = $("#storageCapacityLabel");
-    if (capacityLabel) capacityLabel.textContent = selectedIsland === 0
-      ? "Storage capacity: 1,500 Coins"
-      : "No fixed storage cap";
-
-    $("#storageProgressFill").style.width =
-      `${percentage}%`;
-
-    $("#storagePanel").classList.toggle(
-      "storage-full",
-      current >= STORAGE_CAP
+    const configuredCap = Number(
+      gameStateData?.islands?.[selectedIsland]?.storage_cap ??
+      (selectedIsland === 0 ? DEFAULT_STORAGE_CAP : 0)
     );
+    const hasCap = configuredCap > 0;
+    const current = Math.max(0, hasCap
+      ? Math.min(Number(amount) || 0, configuredCap)
+      : (Number(amount) || 0));
+    pendingCoins = current;
+    const percentage = hasCap ? Math.min(100, (current / configuredCap) * 100) : 0;
 
+    $("#pendingCoins").textContent = current.toFixed(2);
+    $("#storageAmount").textContent = current.toFixed(2);
+    $("#storageProgressText").textContent = hasCap
+      ? current.toFixed(2) + " / " + configuredCap.toLocaleString() + " Coins"
+      : current.toFixed(2) + " Coins";
+    $("#storagePercentage").textContent = hasCap
+      ? percentage.toFixed(1) + "%"
+      : "No fixed cap";
+    const capacityLabel = $("#storageCapacityLabel");
+    if (capacityLabel) capacityLabel.textContent = hasCap
+      ? "Storage capacity: " + configuredCap.toLocaleString() + " Coins"
+      : "No fixed storage cap";
+    $("#storageProgressFill").style.width = percentage + "%";
+    $("#storagePanel").classList.toggle("storage-full", hasCap && current >= configuredCap);
     $("#claimButton").disabled = current < 5;
   }
-
   // ==========================================
   // ISLAND CLICK
   // ==========================================
