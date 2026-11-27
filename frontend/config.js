@@ -26,6 +26,6 @@ window.APP_CONFIG = {
     DEFAULT_LANGUAGE: "en",
     CURRENCY_NAME: "Coins",
     GEM_NAME: "Gems",
-    PREVIEW_MODE: true
+    PREVIEW_MODE: false
   }
 };
