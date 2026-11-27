@@ -1098,3 +1098,24 @@ button { cursor: pointer; }
     font-size: 9px !important;
   }
 }
+
+
+/* Wallet conversion panel */
+.wallet-section { padding: 24px 0 40px; }
+.wallet-exchange-card {
+  max-width: 520px;
+  padding: 20px;
+  border: 1px solid rgba(90, 205, 174, .28);
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(11, 49, 54, .96), rgba(14, 34, 48, .96));
+  box-shadow: 0 12px 32px rgba(0,0,0,.18);
+}
+.wallet-exchange-card p, .wallet-exchange-card small { color: #b9d5d0; line-height: 1.55; }
+.wallet-exchange-card label { display:block; margin:14px 0 7px; font-weight:700; }
+.wallet-exchange-card input {
+  width:100%; box-sizing:border-box; padding:13px 14px;
+  border:1px solid #426c6a; border-radius:10px;
+  background:#071f2a; color:#fff; font:inherit;
+}
+.exchange-preview { margin:14px 0; color:#8fffd1; font-weight:700; }
+.wallet-exchange-card button:disabled { opacity:.45; cursor:not-allowed; }
