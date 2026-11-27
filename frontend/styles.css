@@ -1241,3 +1241,6 @@ button { cursor: pointer; }
 .main-world.single-section-view { min-height: 65vh; }
 .main-world.single-section-view > .wallet-section,
 .main-world.single-section-view > .admin-section { width: 100%; }
+
+.game-layout.dedicated-view { grid-template-columns: minmax(0, 1fr); }
+.game-layout.dedicated-view .main-world { width: 100%; max-width: 100%; }
