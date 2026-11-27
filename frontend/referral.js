@@ -223,6 +223,18 @@
       return true;
     } catch (error) {
       console.error("Referral application failed:", error);
+      const permanent = [
+        "Invalid referral code.",
+        "Referral code not found.",
+        "You cannot use your own referral code.",
+        "A referral has already been applied to this account."
+      ].includes(error.message);
+      if (permanent) {
+        sessionStorage.removeItem(PENDING_KEY);
+        sessionStorage.removeItem(REGISTER_KEY);
+        window.__islandoraReferralWarning = error.message;
+        return true;
+      }
       sessionStorage.setItem(REGISTER_KEY, "1");
       return false;
     }
