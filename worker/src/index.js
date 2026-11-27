@@ -230,6 +230,42 @@ async function listWithdrawals(env,uid){
 async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
 }
+async function adminOverview(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const [users,wallet,withdrawals,referrals]=await Promise.all([
+    env.DB.prepare("SELECT COUNT(*) AS total FROM users").first(),
+    env.DB.prepare("SELECT COALESCE(SUM(gems),0) AS gems,COALESCE(SUM(coins),0) AS coins FROM users").first(),
+    env.DB.prepare("SELECT COUNT(*) AS pending FROM withdrawal_requests WHERE status='pending'").first(),
+    env.DB.prepare("SELECT COUNT(*) AS valid FROM referrals WHERE is_valid=1").first()
+  ]);
+  return json({success:true,admin_role:admin.role,users:Number(users?.total||0),total_gems:Number(wallet?.gems||0),total_coins:Number(wallet?.coins||0),pending_withdrawals:Number(withdrawals?.pending||0),valid_referrals:Number(referrals?.valid||0)});
+}
+async function adminUsers(env,uid,search=""){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const term="%"+String(search).slice(0,80)+"%";
+  const {results=[]}=await env.DB.prepare("SELECT firebase_uid,email,gems,coins,account_status,created_at FROM users WHERE email LIKE ? OR firebase_uid LIKE ? ORDER BY created_at DESC LIMIT 100").bind(term,term).all();
+  return json({success:true,users:results});
+}
+async function adminAdjustWallet(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const target=String(b?.user_uid||""),currency=String(b?.currency||""),amount=Number(b?.amount),key=b?.idempotency_key;
+  if(!target||target.length>128||!["Gems","Coins"].includes(currency)||!Number.isSafeInteger(amount)||amount===0||Math.abs(amount)>1000000000||!idem(key))
+    return json({success:false,error:"Invalid wallet adjustment"},400);
+  const column=currency==="Gems"?"gems":"coins";
+  try{
+    const r=await env.DB.batch([
+      env.DB.prepare(`UPDATE users SET ${column}=${column}+? WHERE firebase_uid=? AND ${column}+?>=0 AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)`).bind(amount,target,amount,key),
+      env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,?,?,'admin_adjustment',?,?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(),target,currency,amount,String(b?.description||"Admin balance adjustment").slice(0,180),uid,key)
+    ]);
+    if(!r[0]?.meta?.changes)return json({success:false,error:"User not found, insufficient balance or duplicate request"},409);
+    try{await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,target_uid,details) VALUES(?,?,?,?,?)").bind(crypto.randomUUID(),uid,"wallet_adjustment",target,JSON.stringify({currency,amount,description:b?.description||""})).run();}catch(e){console.error("Audit log failed",e);}
+    return json({success:true,user_uid:target,currency,adjustment:amount});
+  }catch(e){console.error(e);return json({success:false,error:"Wallet adjustment failed"},500);}
+}
 async function adminIslandConfig(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
@@ -314,6 +350,9 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/overview"&&req.method==="GET")return adminOverview(env,c.sub);
+    if(u.pathname==="/api/admin/users"&&req.method==="GET")return adminUsers(env,c.sub,u.searchParams.get("q")||"");
+    if(u.pathname==="/api/admin/wallet/adjust"&&req.method==="POST")return adminAdjustWallet(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/islands"&&req.method==="GET")return adminIslandConfig(env,c.sub);
     if(u.pathname==="/api/admin/islands"&&req.method==="POST")return updateAdminIslandConfig(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/withdrawals"&&req.method==="GET")return adminWithdrawals(env,c.sub);
