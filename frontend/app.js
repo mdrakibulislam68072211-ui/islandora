@@ -1180,6 +1180,9 @@
       }
     } catch (error) {
       $("#spinButton").disabled = true;
+      $("#spinAdButton").hidden = true;
+      $("#spinCheckButton").hidden = true;
+      $("#spinClaimButton").hidden = true;
       $("#spinMessage").textContent = error.message || "Daily Spin status unavailable.";
     }
   }
