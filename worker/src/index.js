@@ -398,6 +398,7 @@ async function saveAdminAd(env,uid,b){
   if(provider==="Monetag"&&type!=="rewarded")return json({success:false,error:"Monetag is configured for rewarded ads only"},400);
   if(provider==="Adsterra"&&(!url.startsWith("https://")||url.length>2048))return json({success:false,error:"Enter a valid HTTPS direct link"},400);
   if(provider==="Monetag"&&(!/^\d{3,20}$/.test(placement)||!sdkUrl.startsWith("https://")||sdkUrl.length>2048))return json({success:false,error:"A numeric Monetag main zone ID and HTTPS SDK script URL are required"},400);
+  if(provider==="Monetag"&&enabled&&!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Configure the Monetag postback secret before enabling rewarded ads"},503);
   const id=crypto.randomUUID();
   try{
     await env.DB.prepare(`INSERT INTO ad_settings(id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_by,settings_json)
