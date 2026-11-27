@@ -1216,3 +1216,28 @@ button { cursor: pointer; }
 @keyframes liveMiningPulse{0%,100%{opacity:1;text-shadow:0 0 5px #36ff9b66}50%{opacity:.58;text-shadow:0 0 13px #36ff9b}}
 @keyframes liveMiningDot{0%{box-shadow:0 0 0 0 #36ff9b88}70%{box-shadow:0 0 0 7px #36ff9b00}100%{box-shadow:0 0 0 0 #36ff9b00}}
 @media(max-width:420px){.mining-projection-grid{gap:7px}.mining-projection-card{padding:10px}}
+
+
+/* Dedicated app sections and sequential live-mining counter */
+.live-mining-cycle {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #55ffc0;
+  background: #064d40;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 0 12px #36ff9b66;
+}
+.live-mining-cycle b { display: block; }
+.live-mining-cycle b.is-changing { animation: liveMiningNumberPop .28s ease-out; }
+@keyframes liveMiningNumberPop {
+  from { opacity: .25; transform: translateY(5px) scale(.75); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.main-world.single-section-view { min-height: 65vh; }
+.main-world.single-section-view > .wallet-section,
+.main-world.single-section-view > .admin-section { width: 100%; }
