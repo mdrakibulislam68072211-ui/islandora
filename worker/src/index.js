@@ -102,7 +102,54 @@ async function gameState(env,uid){
   });
   return {success:true,user:{gems:user.gems,coins:user.coins},exchange:{coins_per_gem:1,fee_percent:1},islands:islandRows};
 }
-async function syncUser(req,env){
+
+async function verifyTelegramInitData(initData,botToken){
+  if(typeof initData!=="string"||!initData||initData.length>8192||!botToken)throw new Error("Telegram data unavailable");
+  const params=new URLSearchParams(initData), received=params.get("hash");
+  if(!received||!/^[a-f0-9]{64}$/i.test(received))throw new Error("Invalid Telegram signature");
+  params.delete("hash");
+  const pairs=[...params.entries()].sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>k+"="+v);
+  const checkString=pairs.join("\n");
+  const enc=new TextEncoder();
+  const keyMaterial=await crypto.subtle.importKey("raw",enc.encode("WebAppData"),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const secret=await crypto.subtle.sign("HMAC",keyMaterial,enc.encode(botToken));
+  const hmacKey=await crypto.subtle.importKey("raw",secret,{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+  const expected=[...new Uint8Array(await crypto.subtle.sign("HMAC",hmacKey,enc.encode(checkString)))].map(x=>x.toString(16).padStart(2,"0")).join("");
+  let diff=0;for(let i=0;i<64;i++)diff|=expected.charCodeAt(i)^received.toLowerCase().charCodeAt(i);
+  if(diff!==0)throw new Error("Telegram signature verification failed");
+  const authDate=Number(params.get("auth_date")),now=Math.floor(Date.now()/1000);
+  if(!Number.isInteger(authDate)||authDate>now+60||now-authDate>86400)throw new Error("Telegram login data expired");
+  let user;try{user=JSON.parse(params.get("user")||"{}");}catch{throw new Error("Invalid Telegram user data");}
+  if(!user.id||!Number.isSafeInteger(Number(user.id)))throw new Error("Telegram user ID missing");
+  return {telegramUserId:String(user.id),username:typeof user.username==="string"?user.username.slice(0,64):null,authDate};
+}
+async function linkTelegramAccount(req,env,uid){
+  if(!env.TELEGRAM_BOT_TOKEN)return json({success:false,error:"Telegram integration is not configured"},503);
+  const b=await body(req);
+  let verified;try{verified=await verifyTelegramInitData(b?.init_data,env.TELEGRAM_BOT_TOKEN);}catch(e){return json({success:false,error:e.message},401);}
+  try{
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS telegram_accounts (
+      telegram_user_id TEXT PRIMARY KEY,
+      firebase_uid TEXT NOT NULL UNIQUE,
+      username TEXT,
+      linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(firebase_uid) REFERENCES users(firebase_uid)
+    )`).run();
+    const existing=await env.DB.prepare("SELECT firebase_uid FROM telegram_accounts WHERE telegram_user_id=? OR firebase_uid=?").bind(verified.telegramUserId,uid).all();
+    const rows=existing.results||[];
+    if(rows.some(x=>x.firebase_uid!==uid))return json({success:false,error:"This Telegram account or Islandora account is already linked elsewhere"},409);
+    await env.DB.prepare(`INSERT INTO telegram_accounts(telegram_user_id,firebase_uid,username)
+      VALUES(?,?,?) ON CONFLICT(telegram_user_id) DO UPDATE SET
+      username=excluded.username,last_seen_at=CURRENT_TIMESTAMP
+      WHERE telegram_accounts.firebase_uid=excluded.firebase_uid`)
+      .bind(verified.telegramUserId,uid,verified.username).run();
+    const linked=await env.DB.prepare("SELECT telegram_user_id,username,linked_at FROM telegram_accounts WHERE firebase_uid=?").bind(uid).first();
+    if(!linked)return json({success:false,error:"Account link conflict"},409);
+    return json({success:true,linked:true,telegram:{id:linked.telegram_user_id,username:linked.username},linked_at:linked.linked_at});
+  }catch(e){console.error("Telegram account link failed",e);return json({success:false,error:"Unable to link Telegram account"},500);}
+}
+\nasync function syncUser(req,env){
   let c;try{c=await auth(req);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   const uid=c.sub,email=c.email||"";if(!email)return json({success:false,error:"Email not available"},400);
   try{
@@ -683,7 +730,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
   if(u.pathname==="/api/auth/sync"&&req.method==="POST")return syncUser(req,env);
   let c;try{c=await auth(req);await ensureActive(env,c.sub);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   try{
-    if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
+    if(u.pathname==="/api/telegram/link"&&req.method==="POST")return linkTelegramAccount(req,env,c.sub);\n    if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
     if(u.pathname==="/api/spin"&&req.method==="POST")return spinNow(env,c.sub,await body(req));
     if(u.pathname==="/api/spin/ad-open"&&req.method==="POST")return openSpinAd(env,c.sub,await body(req));
     if(u.pathname==="/api/spin/claim"&&req.method==="POST")return claimSpinReward(env,c.sub,await body(req));
