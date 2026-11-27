@@ -329,7 +329,10 @@ async function monetagPostback(req,env){
   const event=await env.DB.prepare("SELECT firebase_uid,reward_coins,status FROM monetag_reward_events WHERE ymid=?").bind(ymid).first();
   if(!event)return json({success:false,error:"Unknown ad event"},404);
   if(event.status!=="pending")return json({success:true,duplicate:true});
-  if(eventType!=="impression"||rewardType!=="valued"){
+  // Click and impression callbacks share one ymid; never let a click
+  // arriving first consume the pending reward event.
+  if(eventType==="click")return json({success:true,credited:false,pending:true});
+  if(rewardType!=="valued"){
     await env.DB.prepare("UPDATE monetag_reward_events SET status='ignored',event_type=?,reward_event_type=?,estimated_price=? WHERE ymid=? AND status='pending'")
       .bind(eventType,rewardType,price,ymid).run();
     return json({success:true,credited:false});
@@ -345,6 +348,12 @@ async function monetagPostback(req,env){
     ]);
     return json({success:true,credited:Number(r[1]?.meta?.changes||0)===1});
   }catch(e){console.error(e);return json({success:false,error:"Reward processing failed"},500);}
+}
+async function monetagRewardStatus(env,uid,ymid){
+  if(!/^[0-9a-f-]{36}$/i.test(ymid))return json({success:false,error:"Invalid ad event"},400);
+  const row=await env.DB.prepare("SELECT status,reward_coins FROM monetag_reward_events WHERE ymid=? AND firebase_uid=?").bind(ymid,uid).first();
+  if(!row)return json({success:false,error:"Ad event not found"},404);
+  return json({success:true,status:row.status,reward_coins:row.status==="credited"?Number(row.reward_coins):0});
 }
 async function listAdPlacements(env,uid){
   const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
@@ -524,6 +533,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
     if(u.pathname==="/api/ads/monetag/start"&&req.method==="POST")return startMonetagReward(env,c.sub,await body(req));
+    if(u.pathname==="/api/ads/monetag/status"&&req.method==="GET")return monetagRewardStatus(env,c.sub,u.searchParams.get("ymid")||"");
     if(u.pathname==="/api/ads/placements"&&req.method==="GET")return listAdPlacements(env,c.sub);
     if(u.pathname==="/api/ads/direct-open"&&req.method==="POST")return openDirectAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/ads"&&req.method==="GET")return adminAds(env,c.sub);
