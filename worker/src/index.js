@@ -150,6 +150,45 @@ async function linkTelegramAccount(req,env,uid){
   }catch(e){console.error("Telegram account link failed",e);return json({success:false,error:"Unable to link Telegram account"},500);}
 }
 
+async function telegramSendStart(env,chatId,startPayload){
+  if(!env.TELEGRAM_BOT_TOKEN)return;
+  const code=String(startPayload||"").match(/^ref_([a-f0-9]{16})$/i)?.[1]?.toLowerCase()||"";
+  const appUrl="https://feature-complete-game-integr.islandora.pages.dev/"+(code?"?ref="+encodeURIComponent(code):"");
+  const text=code
+    ?"Welcome to Islandora! Open the Mini App to create your account. Your referral code has been saved."
+    :"Welcome to Islandora! Open the Mini App to sign in or create your account and start mining.";
+  const response=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/sendMessage",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({chat_id:chatId,text,reply_markup:{inline_keyboard:[[{text:"Open Islandora",web_app:{url:appUrl}}]]}})
+  });
+  if(!response.ok)throw new Error("Telegram sendMessage failed: "+response.status);
+}
+async function telegramWebhook(req,env){
+  const secret=env.TELEGRAM_WEBHOOK_SECRET;
+  if(!secret)return json({success:false,error:"Telegram webhook secret is not configured"},503);
+  if(req.headers.get("X-Telegram-Bot-Api-Secret-Token")!==secret)return json({success:false,error:"Unauthorized"},401);
+  const update=await body(req);
+  const message=update?.message;
+  const match=typeof message?.text==="string"?message.text.trim().match(/^\\/start(?:\\s+([^\\s]+))?/):null;
+  if(message?.chat?.id&&match){
+    try{await telegramSendStart(env,message.chat.id,match[1]||"");}
+    catch(e){console.error("Telegram start reply failed",e);return json({success:false,error:"Unable to send Telegram reply"},502);}
+  }
+  return json({success:true,received:true});
+}
+async function configureTelegramWebhook(req,env){
+  const secret=env.TELEGRAM_WEBHOOK_SECRET;
+  if(!secret||req.headers.get("X-Webhook-Setup-Secret")!==secret)return json({success:false,error:"Unauthorized"},401);
+  if(!env.TELEGRAM_BOT_TOKEN)return json({success:false,error:"Telegram bot token is missing"},503);
+  const webhookUrl="https://islandora-staging-api.mdrakibulislam68072211.workers.dev/api/telegram/webhook";
+  const response=await fetch("https://api.telegram.org/bot"+env.TELEGRAM_BOT_TOKEN+"/setWebhook",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({url:webhookUrl,secret_token:secret,allowed_updates:["message"],drop_pending_updates:false})
+  });
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok||!data.ok)return json({success:false,error:"Telegram rejected webhook configuration",details:data.description||response.status},502);
+  return json({success:true,webhook_configured:true});
+}
 async function syncUser(req,env){
   let c;try{c=await auth(req);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   const uid=c.sub,email=c.email||"";if(!email)return json({success:false,error:"Email not available"},400);
@@ -722,6 +761,8 @@ async function exchange(env,uid,b){
 export default {async scheduled(controller,env,ctx){await processReferralOutbox(env);try{await env.DB.prepare("UPDATE monetag_reward_events SET status='ignored' WHERE status='pending' AND created_at<=datetime('now','-48 hours')").run();}catch(e){console.error("Monetag event cleanup failed",e);}},async fetch(req,env){
   const u=new URL(req.url);
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
+  if(u.pathname==="/api/telegram/webhook"&&req.method==="POST")return telegramWebhook(req,env);
+  if(u.pathname==="/internal/telegram/configure-webhook"&&req.method==="POST")return configureTelegramWebhook(req,env);
   if((u.pathname==="/"||u.pathname==="/health")&&req.method==="GET"){
     try{const r=await env.DB.prepare("SELECT 1 AS connected").first();return json({success:true,app:"Islandora",worker:"online",database:r?.connected===1?"connected":"error"});}
     catch{return json({success:false,error:"Database unavailable"},500);}
