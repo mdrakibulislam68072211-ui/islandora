@@ -611,6 +611,22 @@
 
         </section>
 
+        <section class="wallet-section" id="wallet">
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">WALLET</span>
+              <h2>💎 Convert Coins to Gems</h2>
+            </div>
+          </div>
+          <div class="wallet-exchange-card">
+            <p>Exchange rate: 1 Coin = 1 Gem before a 1% fee.</p>
+            <label for="exchangeCoins">Coins to exchange</label>
+            <input id="exchangeCoins" type="number" min="2" step="1" inputmode="numeric" placeholder="Enter whole Coins">
+            <div class="exchange-preview" id="exchangePreview">You will receive: 0 Gems</div>
+            <button class="open-button" id="exchangeButton" type="button">Convert to Gems</button>
+            <small id="exchangeMessage">Gems cannot be converted back to Coins.</small>
+          </div>
+        </section>
       </section>
 
     </main>
@@ -625,6 +641,10 @@
       <a class="nav-item" href="#mining">
         <span>⚒</span>
         <small>Mining</small>
+      </a>
+      <a class="nav-item" href="#wallet">
+        <span>💎</span>
+        <small>Wallet</small>
       </a>
 
       <a class="nav-item" href="#spin">
