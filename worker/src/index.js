@@ -230,6 +230,29 @@ async function listWithdrawals(env,uid){
 async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
 }
+async function listAdPlacements(env,uid){
+  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
+  return json({success:true,ads:results});
+}
+async function openDirectAd(env,uid,b){
+  const id=String(b?.ad_setting_id||"");
+  if(!id||id.length>64)return json({success:false,error:"Invalid ad placement"},400);
+  const ad=await env.DB.prepare("SELECT id,direct_link_url,cooldown_hours,daily_limit FROM ad_settings WHERE id=? AND provider='Adsterra' AND ad_type='direct_link' AND enabled=1").bind(id).first();
+  if(!ad)return json({success:false,error:"Ad placement unavailable"},404);
+  if(Number(ad.daily_limit)<=0)return json({success:false,error:"This ad is currently disabled"},403);
+  try{
+    const r=await env.DB.prepare(`INSERT INTO user_ad_activity(firebase_uid,ad_setting_id,day_key,opens_today,last_opened_at)
+      VALUES(?,?,date('now'),1,CURRENT_TIMESTAMP)
+      ON CONFLICT(firebase_uid,ad_setting_id) DO UPDATE SET
+       opens_today=CASE WHEN user_ad_activity.day_key=date('now') THEN user_ad_activity.opens_today+1 ELSE 1 END,
+       day_key=date('now'),last_opened_at=CURRENT_TIMESTAMP
+      WHERE user_ad_activity.last_opened_at<=datetime('now','-'||?||' hours')
+        AND (user_ad_activity.day_key<>date('now') OR user_ad_activity.opens_today<?)`)
+      .bind(uid,id,Number(ad.cooldown_hours),Number(ad.daily_limit)).run();
+    if(!r.meta?.changes)return json({success:false,error:"Ad cooldown or daily limit reached"},429);
+    return json({success:true,url:ad.direct_link_url,cooldown_hours:Number(ad.cooldown_hours)});
+  }catch(e){console.error(e);return json({success:false,error:"Ad could not be opened"},500);}
+}
 async function adminAds(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
@@ -381,6 +404,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/ads/placements"&&req.method==="GET")return listAdPlacements(env,c.sub);
+    if(u.pathname==="/api/ads/direct-open"&&req.method==="POST")return openDirectAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/ads"&&req.method==="GET")return adminAds(env,c.sub);
     if(u.pathname==="/api/admin/ads"&&req.method==="POST")return saveAdminAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/overview"&&req.method==="GET")return adminOverview(env,c.sub);
