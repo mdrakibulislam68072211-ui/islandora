@@ -230,6 +230,37 @@ async function listWithdrawals(env,uid){
 async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
 }
+async function adminAds(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_at FROM ad_settings ORDER BY provider,ad_type").all();
+  return json({success:true,ads:results});
+}
+async function saveAdminAd(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const provider=String(b?.provider||""),type=String(b?.ad_type||""),name=String(b?.name||"").trim();
+  const enabled=b?.enabled?1:0,url=String(b?.direct_link_url||"").trim(),placement=String(b?.placement_id||"").trim();
+  const cooldown=Number(b?.cooldown_hours),limit=Number(b?.daily_limit),reward=Number(b?.reward_coins);
+  if(!["Adsterra","Monetag"].includes(provider)||!["direct_link","rewarded"].includes(type)||!name||name.length>100||
+     !Number.isInteger(cooldown)||cooldown<0||cooldown>720||!Number.isInteger(limit)||limit<0||limit>1000||
+     !Number.isSafeInteger(reward)||reward<0||reward>1000000)
+    return json({success:false,error:"Invalid ad settings"},400);
+  if(provider==="Adsterra"&&type!=="direct_link")return json({success:false,error:"Adsterra is configured for direct links only"},400);
+  if(provider==="Monetag"&&type!=="rewarded")return json({success:false,error:"Monetag is configured for rewarded ads only"},400);
+  if(provider==="Adsterra"&&(!url.startsWith("https://")||url.length>2048))return json({success:false,error:"Enter a valid HTTPS direct link"},400);
+  if(provider==="Monetag"&&(!placement||placement.length>200))return json({success:false,error:"A Monetag placement ID is required"},400);
+  const id=crypto.randomUUID();
+  try{
+    await env.DB.prepare(`INSERT INTO ad_settings(id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_by)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider,ad_type) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,direct_link_url=excluded.direct_link_url,placement_id=excluded.placement_id,cooldown_hours=excluded.cooldown_hours,daily_limit=excluded.daily_limit,reward_coins=excluded.reward_coins,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP`)
+      .bind(id,provider,type,name,enabled,provider==="Adsterra"?url:null,provider==="Monetag"?placement:null,cooldown,limit,reward,uid).run();
+    await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,details) VALUES(?,?,?,?)")
+      .bind(crypto.randomUUID(),uid,"ad_settings_update",JSON.stringify({provider,ad_type:type,enabled})).run();
+    return json({success:true,message:"Ad settings saved"});
+  }catch(e){console.error(e);return json({success:false,error:"Ad settings could not be saved"},500);}
+}
 async function adminOverview(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
@@ -350,6 +381,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/ads"&&req.method==="GET")return adminAds(env,c.sub);
+    if(u.pathname==="/api/admin/ads"&&req.method==="POST")return saveAdminAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/overview"&&req.method==="GET")return adminOverview(env,c.sub);
     if(u.pathname==="/api/admin/users"&&req.method==="GET")return adminUsers(env,c.sub,u.searchParams.get("q")||"");
     if(u.pathname==="/api/admin/wallet/adjust"&&req.method==="POST")return adminAdjustWallet(env,c.sub,await body(req));
