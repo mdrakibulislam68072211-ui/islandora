@@ -378,6 +378,143 @@ async function openDirectAd(env,uid,b){
     return json({success:true,url:ad.direct_link_url,cooldown_hours:Number(ad.cooldown_hours)});
   }catch(e){console.error(e);return json({success:false,error:"Ad could not be opened"},500);}
 }
+async function spinState(env,uid){
+  const [settings,ad,attempt]=await Promise.all([
+    env.DB.prepare("SELECT enabled,daily_limit FROM spin_settings WHERE id=1").first(),
+    env.DB.prepare("SELECT id,direct_link_url FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first(),
+    env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first()
+  ]);
+  const verificationReady=!!env.ADSTERRA_POSTBACK_SECRET&&!!ad?.direct_link_url;
+  return json({success:true,enabled:Number(settings?.enabled||0)===1&&verificationReady,verification_ready:verificationReady,
+    reason:!verificationReady?"Adsterra completion verification is not configured":null,
+    daily_limit:1,remaining_spins:attempt?0:1,attempt:attempt||null});
+}
+async function spinNow(env,uid,b){
+  const key=b?.idempotency_key;
+  if(!idem(key))return json({success:false,error:"A valid idempotency key is required"},400);
+  const [settings,ad]=await Promise.all([
+    env.DB.prepare("SELECT enabled FROM spin_settings WHERE id=1").first(),
+    env.DB.prepare("SELECT id,direct_link_url FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first()
+  ]);
+  if(Number(settings?.enabled||0)!==1)return json({success:false,error:"Daily Spin is disabled"},403);
+  if(!ad?.direct_link_url||!env.ADSTERRA_POSTBACK_SECRET)return json({success:false,error:"Adsterra completion verification is not configured. No locked reward can be issued yet."},503);
+  const existing=await env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
+  if(existing)return json({success:true,already_spun:true,attempt:existing,daily_limit:1});
+  const {results=[]}=await env.DB.prepare("SELECT reward_coins,probability_bps FROM spin_reward_options WHERE enabled=1 ORDER BY sort_order").all();
+  const total=results.reduce((sum,x)=>sum+Number(x.probability_bps||0),0);
+  if(!results.length||total!==10000||results.some(x=>!Number.isSafeInteger(Number(x.reward_coins))||Number(x.reward_coins)<=0))
+    return json({success:false,error:"Spin reward probabilities must total exactly 100%"},503);
+  const random=new Uint32Array(1);crypto.getRandomValues(random);
+  const roll=random[0]%10000;
+  let cursor=0,reward=Number(results[results.length-1].reward_coins);
+  for(const option of results){cursor+=Number(option.probability_bps);if(roll<cursor){reward=Number(option.reward_coins);break;}}
+  const id=crypto.randomUUID(),psid=crypto.randomUUID().replace(/-/g,"");
+  try{
+    const inserted=await env.DB.prepare(`INSERT OR IGNORE INTO spin_attempts
+      (id,firebase_uid,day_key,reward_coins,status,adsterra_psid,idempotency_key)
+      SELECT ?,?,date('now','+6 hours'),?,'locked',?,?
+      WHERE NOT EXISTS(SELECT 1 FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours'))`)
+      .bind(id,uid,reward,psid,key,uid).run();
+    const attempt=await env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
+    if(!attempt)return json({success:false,error:"Daily spin could not be created"},409);
+    return json({success:true,already_spun:!inserted.meta?.changes,attempt,daily_limit:1});
+  }catch(e){console.error(e);return json({success:false,error:"Daily spin failed"},500);}
+}
+async function openSpinAd(env,uid,b){
+  const id=String(b?.spin_id||"");
+  if(!id||id.length>64)return json({success:false,error:"Invalid spin attempt"},400);
+  if(!env.ADSTERRA_POSTBACK_SECRET)return json({success:false,error:"Adsterra completion verification is not configured"},503);
+  const [attempt,ad]=await Promise.all([
+    env.DB.prepare("SELECT id,adsterra_psid,status,ad_opened_at FROM spin_attempts WHERE id=? AND firebase_uid=?").bind(id,uid).first(),
+    env.DB.prepare("SELECT id,direct_link_url,cooldown_hours FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first()
+  ]);
+  if(!attempt||!ad)return json({success:false,error:"Spin or Adsterra placement not found"},404);
+  if(attempt.status!=="locked"||attempt.ad_opened_at)return json({success:false,error:"This spin ad has already been opened or verified"},409);
+  try{
+    const target=new URL(ad.direct_link_url);
+    target.searchParams.set("psid",attempt.adsterra_psid);
+    const result=await env.DB.batch([
+      env.DB.prepare(`INSERT INTO user_ad_activity(firebase_uid,ad_setting_id,day_key,opens_today,last_opened_at)
+        VALUES(?,?,date('now','+6 hours'),1,CURRENT_TIMESTAMP)
+        ON CONFLICT(firebase_uid,ad_setting_id) DO UPDATE SET
+         opens_today=CASE WHEN user_ad_activity.day_key=date('now','+6 hours') THEN user_ad_activity.opens_today+1 ELSE 1 END,
+         day_key=date('now','+6 hours'),last_opened_at=CURRENT_TIMESTAMP
+        WHERE user_ad_activity.last_opened_at<=datetime('now','-'||?||' hours')
+          AND (user_ad_activity.day_key<>date('now','+6 hours') OR user_ad_activity.opens_today<1)
+          AND EXISTS(SELECT 1 FROM spin_attempts WHERE id=? AND firebase_uid=? AND status='locked' AND ad_opened_at IS NULL)`)
+        .bind(uid,ad.id,Number(ad.cooldown_hours),id,uid),
+      env.DB.prepare("UPDATE spin_attempts SET ad_opened_at=CURRENT_TIMESTAMP WHERE changes()=1 AND id=? AND firebase_uid=? AND status='locked' AND ad_opened_at IS NULL").bind(id,uid)
+    ]);
+    if(!result[0]?.meta?.changes)return json({success:false,error:"Adsterra link daily limit reached"},429);
+    if(!result[1]?.meta?.changes)return json({success:false,error:"Spin ad could not be opened"},409);
+    return json({success:true,url:target.toString(),status:"locked",message:"Opening the ad does not unlock the reward. Server verification is required."});
+  }catch(e){console.error(e);return json({success:false,error:"Adsterra link could not be opened"},500);}
+}
+async function claimSpinReward(env,uid,b){
+  const id=String(b?.spin_id||"");
+  if(!id||id.length>64)return json({success:false,error:"Invalid spin attempt"},400);
+  const attempt=await env.DB.prepare("SELECT reward_coins,status FROM spin_attempts WHERE id=? AND firebase_uid=?").bind(id,uid).first();
+  if(!attempt)return json({success:false,error:"Spin attempt not found"},404);
+  if(attempt.status!=="verified")return json({success:false,error:"Adsterra has not verified completion. Reward remains locked."},403);
+  const key="spin_reward:"+id;
+  try{
+    const result=await env.DB.batch([
+      env.DB.prepare("UPDATE spin_attempts SET status='claimed',claimed_at=CURRENT_TIMESTAMP WHERE id=? AND firebase_uid=? AND status='verified' AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(id,uid,key),
+      env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'daily_spin_reward','Verified daily spin reward',?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(),uid,Number(attempt.reward_coins),id,key),
+      env.DB.prepare("UPDATE users SET coins=coins+? WHERE changes()=1 AND firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=?)")
+        .bind(Number(attempt.reward_coins),uid,key,uid)
+    ]);
+    if(!result[0]?.meta?.changes)return json({success:false,error:"Spin reward was already claimed"},409);
+    return json({success:true,claimed_coins:Number(attempt.reward_coins)});
+  }catch(e){console.error(e);return json({success:false,error:"Spin reward claim failed"},500);}
+}
+async function adsterraSpinPostback(req,env){
+  if(!env.ADSTERRA_POSTBACK_SECRET)return json({success:false,error:"Adsterra postback secret is not configured"},503);
+  const u=new URL(req.url),secret=u.searchParams.get("secret")||"",psid=String(u.searchParams.get("psid")||""),status=u.searchParams.get("status")||"";
+  if(!secret||secret!==env.ADSTERRA_POSTBACK_SECRET)return json({success:false,error:"Unauthorized postback"},403);
+  if(!/^[0-9a-f]{32}$/i.test(psid)||status!=="approved")return json({success:false,error:"Invalid approval event"},400);
+  const result=await env.DB.prepare("UPDATE spin_attempts SET status='verified',verified_at=CURRENT_TIMESTAMP WHERE adsterra_psid=? AND status='locked' AND ad_opened_at IS NOT NULL").bind(psid).run();
+  if(result.meta?.changes)return json({success:true,verified:true});
+  const existing=await env.DB.prepare("SELECT status FROM spin_attempts WHERE adsterra_psid=?").bind(psid).first();
+  if(existing?.status==="verified"||existing?.status==="claimed")return json({success:true,duplicate:true});
+  return json({success:false,error:"Matching opened spin attempt not found"},404);
+}
+async function adminSpin(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const [settings,options]=await Promise.all([
+    env.DB.prepare("SELECT enabled,daily_limit,updated_at FROM spin_settings WHERE id=1").first(),
+    env.DB.prepare("SELECT reward_coins,probability_bps,enabled,sort_order FROM spin_reward_options ORDER BY sort_order").all()
+  ]);
+  return json({success:true,settings,options:options.results||[]});
+}
+async function saveAdminSpin(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const enabled=b?.enabled?1:0,options=Array.isArray(b?.options)?b.options:[];
+  if(options.length<2||options.length>20)return json({success:false,error:"Provide 2 to 20 spin rewards"},400);
+  const seen=new Set();let total=0;
+  for(const option of options){
+    const reward=Number(option?.reward_coins),probability=Number(option?.probability_bps);
+    if(!Number.isSafeInteger(reward)||reward<1||reward>1000000||!Number.isInteger(probability)||probability<0||probability>10000||seen.has(reward))
+      return json({success:false,error:"Each reward must be unique and have a valid whole-number probability"},400);
+    seen.add(reward);total+=probability;
+  }
+  if(total!==10000)return json({success:false,error:"Spin probabilities must total exactly 100%"},400);
+  const stmts=[
+    env.DB.prepare("UPDATE spin_settings SET enabled=?,updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE id=1").bind(enabled,uid),
+    env.DB.prepare("DELETE FROM spin_reward_options")
+  ];
+  options.forEach((option,index)=>stmts.push(
+    env.DB.prepare("INSERT INTO spin_reward_options(id,reward_coins,probability_bps,enabled,sort_order) VALUES(?,?,?,?,?)")
+      .bind("spin-"+Number(option.reward_coins),Number(option.reward_coins),Number(option.probability_bps),1,index+1)
+  ));
+  stmts.push(env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,details) VALUES(?,?,?,?)")
+    .bind(crypto.randomUUID(),uid,"spin_settings_update",JSON.stringify({enabled,options})));
+  try{await env.DB.batch(stmts);return json({success:true,message:"Spin settings saved"});}
+  catch(e){console.error(e);return json({success:false,error:"Spin settings could not be saved"},500);}
+}
 async function adminAds(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
@@ -521,9 +658,14 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     catch{return json({success:false,error:"Database unavailable"},500);}
   }
   if(u.pathname==="/api/ads/monetag/postback"&&req.method==="GET")return monetagPostback(req,env);
+  if(u.pathname==="/api/spin/adsterra/postback"&&req.method==="GET")return adsterraSpinPostback(req,env);
   if(u.pathname==="/api/auth/sync"&&req.method==="POST")return syncUser(req,env);
   let c;try{c=await auth(req);await ensureActive(env,c.sub);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   try{
+    if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
+    if(u.pathname==="/api/spin"&&req.method==="POST")return spinNow(env,c.sub,await body(req));
+    if(u.pathname==="/api/spin/ad-open"&&req.method==="POST")return openSpinAd(env,c.sub,await body(req));
+    if(u.pathname==="/api/spin/claim"&&req.method==="POST")return claimSpinReward(env,c.sub,await body(req));
     if(u.pathname==="/api/referral/commission"&&req.method==="GET")return referralCommissionInfo(env,c.sub);
     if(u.pathname==="/api/referral/commission/claim"&&req.method==="POST")return claimReferralCommission(env,c.sub,await body(req));
     if(u.pathname==="/api/game/state"&&req.method==="GET")return json(await gameState(env,c.sub));
@@ -537,6 +679,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/ads/monetag/status"&&req.method==="GET")return monetagRewardStatus(env,c.sub,u.searchParams.get("ymid")||"");
     if(u.pathname==="/api/ads/placements"&&req.method==="GET")return listAdPlacements(env,c.sub);
     if(u.pathname==="/api/ads/direct-open"&&req.method==="POST")return openDirectAd(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/spin"&&req.method==="GET")return adminSpin(env,c.sub);
+    if(u.pathname==="/api/admin/spin"&&req.method==="POST")return saveAdminSpin(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/ads"&&req.method==="GET")return adminAds(env,c.sub);
     if(u.pathname==="/api/admin/ads"&&req.method==="POST")return saveAdminAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/overview"&&req.method==="GET")return adminOverview(env,c.sub);
