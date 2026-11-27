@@ -1082,7 +1082,7 @@
       monetagSettingId = rewarded?.id || null;
       monetagZone = rewarded?.placement_id || null;
       try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
-      $("#monetagCard").hidden = !(telegram && monetagSettingId && monetagZone && monetagSdkUrl);
+      $("#monetagCard").hidden = !(telegram?.initData && monetagSettingId && monetagZone && monetagSdkUrl);
     } catch (error) {
       adsterraSettingId = null;
       $("#adsterraCard").hidden = true;
