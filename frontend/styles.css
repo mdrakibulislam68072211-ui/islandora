@@ -1133,3 +1133,15 @@ button { cursor: pointer; }
   padding:10px 0; border-top:1px solid rgba(150,210,200,.18);
   color:#d8ece7; font-size:13px; line-height:1.5;
 }
+
+
+.admin-section .wallet-exchange-card { margin-bottom: 16px; }
+.admin-overview { color:#9fffd5; line-height:1.7; font-weight:700; }
+.admin-section input, .admin-section select {
+  width:100%; box-sizing:border-box; margin:5px 0 12px; padding:12px;
+  border:1px solid #426c6a; border-radius:10px;
+  background:#071f2a; color:#fff; font:inherit;
+}
+.admin-section label { display:block; color:#c8e2dc; font-size:13px; font-weight:700; }
+.admin-section button { margin:5px 5px 5px 0; }
+.admin-section [hidden] { display:none !important; }
