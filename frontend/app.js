@@ -543,6 +543,10 @@
         if (!referralSetupReady) {
           showToast("Referral setup could not be confirmed. Refresh before opening a mining box.");
         }
+        if (window.__islandoraReferralWarning) {
+          showToast("Referral code was not applied: " + window.__islandoraReferralWarning);
+          window.__islandoraReferralWarning = null;
+        }
 
       } catch (error) {
         $("#accountLoading").hidden = true;
