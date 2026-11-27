@@ -730,7 +730,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
   if(u.pathname==="/api/auth/sync"&&req.method==="POST")return syncUser(req,env);
   let c;try{c=await auth(req);await ensureActive(env,c.sub);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   try{
-    if(u.pathname==="/api/telegram/link"&&req.method==="POST")return linkTelegramAccount(req,env,c.sub);\n    if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
+    if(u.pathname==="/api/telegram/link"&&req.method==="POST")return linkTelegramAccount(req,env,c.sub);
+    if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
     if(u.pathname==="/api/spin"&&req.method==="POST")return spinNow(env,c.sub,await body(req));
     if(u.pathname==="/api/spin/ad-open"&&req.method==="POST")return openSpinAd(env,c.sub,await body(req));
     if(u.pathname==="/api/spin/claim"&&req.method==="POST")return claimSpinReward(env,c.sub,await body(req));
