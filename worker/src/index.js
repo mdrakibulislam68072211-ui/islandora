@@ -175,9 +175,9 @@ async function claimReferralCommission(env,uid,b){
         WHERE (
           COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0)-
           COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_claims WHERE referrer_uid=?),0)
-        )>=5000
+        )>=?
         AND NOT EXISTS(SELECT 1 FROM referral_commission_claims WHERE idempotency_key=?)`)
-        .bind(crypto.randomUUID(),uid,consumed,coins,key,uid,uid,key),
+        .bind(crypto.randomUUID(),uid,consumed,coins,key,uid,uid,consumed,key),
       env.DB.prepare(`INSERT INTO wallet_transactions
         (id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key)
         SELECT ?,?,'Coins',?,'referral_commission_claim','Claim referral commission',?,?
