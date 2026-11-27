@@ -1158,7 +1158,8 @@
       const claimButton = $("#spinClaimButton");
       spinButton.disabled = !data.enabled || !!attempt;
       spinButton.textContent = attempt ? "Already Spun Today" : "Spin Now";
-      adButton.hidden = !(attempt && attempt.status === "locked" && !attempt.ad_opened_at);
+      adButton.hidden = !(attempt && attempt.status === "locked" && !attempt.ad_opened_at && data.verification_ready);
+      $("#spinCheckButton").hidden = !(attempt && attempt.status === "locked" && !!attempt.ad_opened_at);
       claimButton.hidden = !(attempt && attempt.status === "verified");
       if (!attempt) {
         $("#spinRewardValue").textContent = "—";
@@ -1195,6 +1196,13 @@
       $("#spinMessage").textContent = error.message;
       button.disabled = false;
     }
+  });
+
+  $("#spinCheckButton").addEventListener("click", async () => {
+    const button = $("#spinCheckButton");
+    button.disabled = true;
+    try { await loadSpinState(auth.currentUser); }
+    finally { button.disabled = false; }
   });
 
   $("#spinAdButton").addEventListener("click", async () => {
