@@ -716,7 +716,9 @@
                 ${
                   unlocked
                     ? island.type
-                    : "Unlock after completing Island " + index
+                    : index === 0
+                      ? "Unlock with 500 Gems"
+                      : "Complete Island " + index + " first"
                 }
               </span>
             </span>
@@ -853,7 +855,9 @@
     const current = Math.max(0, Math.min(Number(amount) || 0, cap));
     pendingCoins = current;
 
-    const percentage = (current / STORAGE_CAP) * 100;
+    const percentage = selectedIsland === 0
+      ? Math.min(100, (current / STORAGE_CAP) * 100)
+      : 0;
 
     $("#pendingCoins").textContent =
       current.toFixed(2);
@@ -865,7 +869,11 @@
       selectedIsland === 0 ? `${current.toFixed(2)} / ${STORAGE_CAP.toLocaleString()} Coins` : `${current.toFixed(2)} Coins`;
 
     $("#storagePercentage").textContent =
-      `${percentage.toFixed(1)}%`;
+      selectedIsland === 0 ? `${percentage.toFixed(1)}%` : "No fixed cap";
+    const capacityLabel = $("#storageCapacityLabel");
+    if (capacityLabel) capacityLabel.textContent = selectedIsland === 0
+      ? "Storage capacity: 1,500 Coins"
+      : "No fixed storage cap";
 
     $("#storageProgressFill").style.width =
       `${percentage}%`;
