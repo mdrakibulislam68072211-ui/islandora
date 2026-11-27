@@ -230,6 +230,57 @@ async function listWithdrawals(env,uid){
 async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
 }
+async function startMonetagReward(env,uid,b){
+  const id=String(b?.ad_setting_id||"");
+  const ad=await env.DB.prepare("SELECT id,placement_id,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE id=? AND provider='Monetag' AND ad_type='rewarded' AND enabled=1").bind(id).first();
+  if(!ad||!ad.placement_id)return json({success:false,error:"Rewarded ad is not configured"},404);
+  if(Number(ad.daily_limit)<=0||Number(ad.reward_coins)<=0)return json({success:false,error:"Rewarded ad is currently disabled"},403);
+  const ymid=crypto.randomUUID();
+  try{
+    const activity=await env.DB.prepare(`INSERT INTO user_ad_activity(firebase_uid,ad_setting_id,day_key,opens_today,last_opened_at)
+      VALUES(?,?,date('now'),1,CURRENT_TIMESTAMP)
+      ON CONFLICT(firebase_uid,ad_setting_id) DO UPDATE SET
+       opens_today=CASE WHEN user_ad_activity.day_key=date('now') THEN user_ad_activity.opens_today+1 ELSE 1 END,
+       day_key=date('now'),last_opened_at=CURRENT_TIMESTAMP
+      WHERE user_ad_activity.last_opened_at<=datetime('now','-'||?||' hours')
+        AND (user_ad_activity.day_key<>date('now') OR user_ad_activity.opens_today<?)`)
+      .bind(uid,id,Number(ad.cooldown_hours),Number(ad.daily_limit)).run();
+    if(!activity.meta?.changes)return json({success:false,error:"Rewarded ad cooldown or daily limit reached"},429);
+    await env.DB.prepare("INSERT INTO monetag_reward_events(ymid,firebase_uid,reward_coins,status) VALUES(?,?,?,'pending')")
+      .bind(ymid,uid,Number(ad.reward_coins)).run();
+    return json({success:true,ymid,placement_id:ad.placement_id,reward_coins:Number(ad.reward_coins)});
+  }catch(e){console.error(e);return json({success:false,error:"Could not start rewarded ad"},500);}
+}
+async function monetagPostback(req,env){
+  const u=new URL(req.url),secret=u.searchParams.get("secret")||"";
+  if(!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Postback secret not configured"},503);
+  if(!secret||secret!==env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Unauthorized postback"},403);
+  const ymid=String(u.searchParams.get("ymid")||"");
+  const eventType=String(u.searchParams.get("event_type")||"");
+  const rewardType=String(u.searchParams.get("reward_event_type")||"");
+  const price=String(u.searchParams.get("estimated_price")||"");
+  if(!/^[0-9a-f-]{36}$/i.test(ymid)||!["impression","click"].includes(eventType)||!["valued","non_valued"].includes(rewardType))
+    return json({success:false,error:"Invalid postback fields"},400);
+  const event=await env.DB.prepare("SELECT firebase_uid,reward_coins,status FROM monetag_reward_events WHERE ymid=?").bind(ymid).first();
+  if(!event)return json({success:false,error:"Unknown ad event"},404);
+  if(event.status!=="pending")return json({success:true,duplicate:true});
+  if(eventType!=="impression"||rewardType!=="valued"){
+    await env.DB.prepare("UPDATE monetag_reward_events SET status='ignored',event_type=?,reward_event_type=?,estimated_price=? WHERE ymid=? AND status='pending'")
+      .bind(eventType,rewardType,price,ymid).run();
+    return json({success:true,credited:false});
+  }
+  const key="monetag_reward:"+ymid;
+  try{
+    const r=await env.DB.batch([
+      env.DB.prepare("UPDATE monetag_reward_events SET status='credited',event_type=?,reward_event_type=?,estimated_price=?,credited_at=CURRENT_TIMESTAMP WHERE ymid=? AND status='pending'").bind(eventType,rewardType,price,ymid),
+      env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,firebase_uid,'Coins',?,'monetag_ad_reward','Verified Monetag rewarded ad',ymid,? FROM monetag_reward_events WHERE ymid=? AND status='credited' AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+        .bind(crypto.randomUUID(),Number(event.reward_coins),key,ymid,key),
+      env.DB.prepare("UPDATE users SET coins=coins+? WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=?)")
+        .bind(Number(event.reward_coins),event.firebase_uid,key,event.firebase_uid)
+    ]);
+    return json({success:true,credited:Number(r[1]?.meta?.changes||0)===1});
+  }catch(e){console.error(e);return json({success:false,error:"Reward processing failed"},500);}
+}
 async function listAdPlacements(env,uid){
   const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
   return json({success:true,ads:results});
@@ -394,6 +445,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     try{const r=await env.DB.prepare("SELECT 1 AS connected").first();return json({success:true,app:"Islandora",worker:"online",database:r?.connected===1?"connected":"error"});}
     catch{return json({success:false,error:"Database unavailable"},500);}
   }
+  if(u.pathname==="/api/ads/monetag/postback"&&req.method==="GET")return monetagPostback(req,env);
   if(u.pathname==="/api/auth/sync"&&req.method==="POST")return syncUser(req,env);
   let c;try{c=await auth(req);await ensureActive(env,c.sub);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   try{
@@ -404,6 +456,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/ads/monetag/start"&&req.method==="POST")return startMonetagReward(env,c.sub,await body(req));
     if(u.pathname==="/api/ads/placements"&&req.method==="GET")return listAdPlacements(env,c.sub);
     if(u.pathname==="/api/ads/direct-open"&&req.method==="POST")return openDirectAd(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/ads"&&req.method==="GET")return adminAds(env,c.sub);
