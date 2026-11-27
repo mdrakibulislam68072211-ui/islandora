@@ -1150,3 +1150,19 @@ button { cursor: pointer; }
 
 #adsterraCard[hidden] { display:none !important; }
 #adsterraMessage { display:block; margin-top:10px; color:#b9d5d0; }
+
+.account-loading[hidden] { display:none !important; }
+.account-loading {
+  position:fixed; inset:0; z-index:100000;
+  display:grid; place-items:center; padding:24px;
+  background:rgba(4,18,25,.96); color:#f3fbf8;
+}
+.account-loading-card {
+  display:grid; justify-items:center; gap:12px;
+  width:min(100%,360px); padding:28px 22px;
+  border:1px solid rgba(126,225,192,.3); border-radius:18px;
+  background:linear-gradient(145deg,#10313b,#071d28);
+  text-align:center; box-shadow:0 20px 70px rgba(0,0,0,.35);
+}
+.account-loading-gem { font-size:36px; }
+.account-loading-card small { color:#a8c6c7; line-height:1.5; }
