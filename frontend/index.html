@@ -565,7 +565,7 @@
 
           </div>
 
-          <div class="live-mining-status"><span class="live-mining-dot"></span><strong>LIVE MINING</strong><span>Mining is active</span></div>
+          <div class="live-mining-status"><span class="live-mining-dot"></span><strong>LIVE MINING</strong><span class="live-mining-cycle" aria-label="Mining cycle number"><b id="liveMiningCounter">1</b></span><span>Mining is active</span></div>
           <div class="mining-projection-grid" aria-live="polite">
             <div class="mining-projection-card"><span>DAILY MINING</span><strong id="dailyMiningProjection">0 Coins/day</strong></div>
             <div class="mining-projection-card"><span>MONTHLY PROJECTION</span><strong id="monthlyMiningProjection">0 Coins/30 days</strong></div>
@@ -625,7 +625,7 @@
 
         </section>
 
-        <section class="wallet-section spin-section" id="spin">
+        <section class="wallet-section spin-section" id="spin" hidden>
           <div class="section-heading">
             <div>
               <span class="section-kicker">DAILY REWARD</span>
@@ -652,7 +652,7 @@
           </div>
         </section>
 
-        <section class="wallet-section" id="wallet">
+        <section class="wallet-section" id="wallet" hidden>
           <div class="section-heading">
             <div>
               <span class="section-kicker">WALLET</span>
