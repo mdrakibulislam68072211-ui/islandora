@@ -1251,3 +1251,11 @@ button { cursor: pointer; }
 .live-mining-dot { opacity:.35; }
 .live-mining-dot.is-active { opacity:1; animation:liveMiningPulse 1.25s ease-in-out infinite; }
 @keyframes liveMiningPulse { 0%,100% { box-shadow:0 0 5px #52ffb2; transform:scale(1); } 50% { box-shadow:0 0 15px #52ffb2; transform:scale(1.18); } }
+
+
+/* Mining overview is intentionally grouped beneath the mining boxes,
+   immediately above the claim/storage controls. */
+#mining > .section-heading { margin-top: 22px; }
+#mining > .live-mining-status,
+#mining > .mining-projection-grid,
+#mining > .mining-projection-note { margin-top: 14px; }
