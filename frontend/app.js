@@ -441,7 +441,8 @@
     }
     return data;
   }
-\n  async function syncUserWithBackend(user) {
+
+  async function syncUserWithBackend(user) {
     if (!API_BASE_URL) {
       throw new Error("Backend API URL is missing.");
     }
