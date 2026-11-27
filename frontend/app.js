@@ -795,6 +795,7 @@
       const rate = Number(box.rate_coins_per_day || rates[index]);
       const count = Number(box.open_count || 0);
       const maxed = count >= 10;
+      const canAfford = Number(gameStateData?.user?.gems || 0) >= price;
 
       return `
         <article class="mining-box ${maxed ? "maxed" : ""}">
@@ -815,14 +816,14 @@
           </div>
 
           <div class="box-rate">
-            ⛏ +${rates[index]} / day
+            ⛏ +${rate} / day
           </div>
 
           <button
             class="open-button"
             data-box="${index}"
             type="button"
-            disabled
+            ${maxed || !canAfford ? "disabled" : ""}
           >
             ${maxed ? "MAX" : "Open"}
           </button>
