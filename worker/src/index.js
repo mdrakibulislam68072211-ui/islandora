@@ -296,8 +296,9 @@ async function requireAdmin(env,uid){
 }
 async function startMonetagReward(env,uid,b){
   const id=String(b?.ad_setting_id||"");
-  const ad=await env.DB.prepare("SELECT id,placement_id,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE id=? AND provider='Monetag' AND ad_type='rewarded' AND enabled=1").bind(id).first();
-  if(!ad||!ad.placement_id)return json({success:false,error:"Rewarded ad is not configured"},404);
+  const ad=await env.DB.prepare("SELECT id,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE id=? AND provider='Monetag' AND ad_type='rewarded' AND enabled=1").bind(id).first();
+  let settings={};try{settings=JSON.parse(ad?.settings_json||"{}");}catch{}
+  if(!ad||!/^\d{3,20}$/.test(String(ad.placement_id||""))||!String(settings.sdk_script_url||"").startsWith("https://"))return json({success:false,error:"Rewarded ad SDK is not configured"},404);
   if(Number(ad.daily_limit)<=0||Number(ad.reward_coins)<=0)return json({success:false,error:"Rewarded ad is currently disabled"},403);
   const ymid=crypto.randomUUID();
   try{
@@ -312,7 +313,7 @@ async function startMonetagReward(env,uid,b){
     if(!activity.meta?.changes)return json({success:false,error:"Rewarded ad cooldown or daily limit reached"},429);
     await env.DB.prepare("INSERT INTO monetag_reward_events(ymid,firebase_uid,reward_coins,status) VALUES(?,?,?,'pending')")
       .bind(ymid,uid,Number(ad.reward_coins)).run();
-    return json({success:true,ymid,placement_id:ad.placement_id,reward_coins:Number(ad.reward_coins)});
+    return json({success:true,ymid,placement_id:ad.placement_id,sdk_script_url:settings.sdk_script_url,reward_coins:Number(ad.reward_coins)});
   }catch(e){console.error(e);return json({success:false,error:"Could not start rewarded ad"},500);}
 }
 async function monetagPostback(req,env){
@@ -346,7 +347,7 @@ async function monetagPostback(req,env){
   }catch(e){console.error(e);return json({success:false,error:"Reward processing failed"},500);}
 }
 async function listAdPlacements(env,uid){
-  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
+  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
   return json({success:true,ads:results});
 }
 async function openDirectAd(env,uid,b){
@@ -371,14 +372,14 @@ async function openDirectAd(env,uid,b){
 async function adminAds(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
-  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_at FROM ad_settings ORDER BY provider,ad_type").all();
+  const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,enabled,direct_link_url,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins,updated_at FROM ad_settings ORDER BY provider,ad_type").all();
   return json({success:true,ads:results});
 }
 async function saveAdminAd(env,uid,b){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
   const provider=String(b?.provider||""),type=String(b?.ad_type||""),name=String(b?.name||"").trim();
-  const enabled=b?.enabled?1:0,url=String(b?.direct_link_url||"").trim(),placement=String(b?.placement_id||"").trim();
+  const enabled=b?.enabled?1:0,url=String(b?.direct_link_url||"").trim(),placement=String(b?.placement_id||"").trim(),sdkUrl=String(b?.sdk_script_url||"").trim();
   const cooldown=Number(b?.cooldown_hours),limit=Number(b?.daily_limit),reward=Number(b?.reward_coins);
   if(!["Adsterra","Monetag"].includes(provider)||!["direct_link","rewarded"].includes(type)||!name||name.length>100||
      !Number.isInteger(cooldown)||cooldown<0||cooldown>720||!Number.isInteger(limit)||limit<0||limit>1000||
@@ -387,13 +388,13 @@ async function saveAdminAd(env,uid,b){
   if(provider==="Adsterra"&&type!=="direct_link")return json({success:false,error:"Adsterra is configured for direct links only"},400);
   if(provider==="Monetag"&&type!=="rewarded")return json({success:false,error:"Monetag is configured for rewarded ads only"},400);
   if(provider==="Adsterra"&&(!url.startsWith("https://")||url.length>2048))return json({success:false,error:"Enter a valid HTTPS direct link"},400);
-  if(provider==="Monetag"&&(!placement||placement.length>200))return json({success:false,error:"A Monetag placement ID is required"},400);
+  if(provider==="Monetag"&&(!/^\d{3,20}$/.test(placement)||!sdkUrl.startsWith("https://")||sdkUrl.length>2048))return json({success:false,error:"A numeric Monetag main zone ID and HTTPS SDK script URL are required"},400);
   const id=crypto.randomUUID();
   try{
-    await env.DB.prepare(`INSERT INTO ad_settings(id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_by)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?)
-      ON CONFLICT(provider,ad_type) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,direct_link_url=excluded.direct_link_url,placement_id=excluded.placement_id,cooldown_hours=excluded.cooldown_hours,daily_limit=excluded.daily_limit,reward_coins=excluded.reward_coins,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP`)
-      .bind(id,provider,type,name,enabled,provider==="Adsterra"?url:null,provider==="Monetag"?placement:null,cooldown,limit,reward,uid).run();
+    await env.DB.prepare(`INSERT INTO ad_settings(id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_by,settings_json)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(provider,ad_type) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,direct_link_url=excluded.direct_link_url,placement_id=excluded.placement_id,settings_json=excluded.settings_json,cooldown_hours=excluded.cooldown_hours,daily_limit=excluded.daily_limit,reward_coins=excluded.reward_coins,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP`)
+      .bind(id,provider,type,name,enabled,provider==="Adsterra"?url:null,provider==="Monetag"?placement:null,cooldown,limit,reward,uid,provider==="Monetag"?JSON.stringify({sdk_script_url:sdkUrl}):null).run();
     await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,details) VALUES(?,?,?,?)")
       .bind(crypto.randomUUID(),uid,"ad_settings_update",JSON.stringify({provider,ad_type:type,enabled})).run();
     return json({success:true,message:"Ad settings saved"});
