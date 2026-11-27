@@ -650,7 +650,7 @@ async function exchange(env,uid,b){
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Coins or duplicate request"},409);return json({success:true,coins_spent:amount,fee_coins:fee,gems_received:gems,fee_percent:1});}
   catch(e){console.error(e);return json({success:false,error:"Exchange failed"},500);}
 }
-export default {async scheduled(controller,env,ctx){await processReferralOutbox(env);},async fetch(req,env){
+export default {async scheduled(controller,env,ctx){await processReferralOutbox(env);try{await env.DB.prepare("UPDATE monetag_reward_events SET status='ignored' WHERE status='pending' AND created_at<=datetime('now','-48 hours')").run();}catch(e){console.error("Monetag event cleanup failed",e);}},async fetch(req,env){
   const u=new URL(req.url);
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
   if((u.pathname==="/"||u.pathname==="/health")&&req.method==="GET"){
