@@ -647,6 +647,45 @@
             <div id="withdrawalHistory" class="withdrawal-history"></div>
           </div>
         </section>
+
+        <section class="wallet-section admin-section" id="adminPanel" hidden>
+          <div class="section-heading"><div><span class="section-kicker">CONTROL CENTER</span><h2>⚙ Admin Panel</h2></div></div>
+          <div class="wallet-exchange-card">
+            <h3>Overview</h3>
+            <div id="adminOverview" class="admin-overview">Loading...</div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Island Configuration</h3>
+            <label for="adminIslandNumber">Island</label>
+            <select id="adminIslandNumber"><option value="1">Island 1</option><option value="2">Island 2</option><option value="3">Island 3</option><option value="4">Island 4</option><option value="5">Island 5</option><option value="6">Island 6</option><option value="7">Island 7</option><option value="8">Island 8</option><option value="9">Island 9</option><option value="10">Island 10</option></select>
+            <label for="adminUnlockCost">Unlock cost (Gems)</label><input id="adminUnlockCost" type="number" min="0">
+            <label for="adminBoxPrices">10 box prices (comma separated)</label><input id="adminBoxPrices" type="text">
+            <label for="adminBoxRates">10 mining rates (comma separated)</label><input id="adminBoxRates" type="text">
+            <label for="adminStorageCap">Storage cap (0 = unlimited)</label><input id="adminStorageCap" type="number" min="0">
+            <button class="open-button" id="adminSaveIsland" type="button">Save Island Settings</button>
+            <small id="adminIslandMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>User Lookup</h3>
+            <input id="adminUserSearch" type="search" placeholder="Search email or user ID">
+            <button class="open-button" id="adminSearchButton" type="button">Search Users</button>
+            <div id="adminUsersList" class="withdrawal-history"></div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Adjust User Balance</h3>
+            <label for="adminTargetUid">Firebase User ID</label><input id="adminTargetUid" type="text">
+            <label for="adminCurrency">Currency</label><select id="adminCurrency"><option>Gems</option><option>Coins</option></select>
+            <label for="adminAdjustment">Amount (+ to grant, - to deduct)</label><input id="adminAdjustment" type="number" step="1">
+            <label for="adminAdjustmentNote">Reason</label><input id="adminAdjustmentNote" type="text" maxlength="180">
+            <button class="open-button" id="adminAdjustButton" type="button">Apply Balance Adjustment</button>
+            <small id="adminAdjustMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Withdrawal Review</h3>
+            <button class="open-button" id="adminRefreshWithdrawals" type="button">Refresh Requests</button>
+            <div id="adminWithdrawalList" class="withdrawal-history"></div>
+          </div>
+        </section>
       </section>
 
     </main>
@@ -677,6 +716,9 @@
         <small>Referral</small>
       </a>
 
+      <a class="nav-item" href="#admin" id="adminNavItem" hidden>
+        <span>⚙</span><small>Admin</small>
+      </a>
       <a class="nav-item" href="#profile">
         <span>♙</span>
         <small>Profile</small>
