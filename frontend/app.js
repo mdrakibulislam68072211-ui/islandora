@@ -1165,10 +1165,12 @@
       const hue = (index * 43 + 150) % 360;
       stops.push("hsl(" + hue + " 62% 42%) " + start + "deg " + end + "deg");
       const center = (start + end) / 2;
-      const label = document.createElement("span");
-      label.textContent = Number(option.reward_coins).toLocaleString();
-      label.style.transform = "rotate(" + center + "deg) translateY(-82px) rotate(" + (-center) + "deg)";
-      labels.appendChild(label);
+      if (Number(option.probability_bps) >= 500) {
+        const label = document.createElement("span");
+        label.textContent = Number(option.reward_coins).toLocaleString();
+        label.style.transform = "rotate(" + center + "deg) translateY(-82px) rotate(" + (-center) + "deg)";
+        labels.appendChild(label);
+      }
     });
     wheel.style.background = "conic-gradient(" + stops.join(",") + ")";
   }
