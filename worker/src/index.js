@@ -340,7 +340,7 @@ async function monetagPostback(req,env){
   try{
     const r=await env.DB.batch([
       env.DB.prepare("UPDATE monetag_reward_events SET status='credited',event_type=?,reward_event_type=?,estimated_price=?,credited_at=CURRENT_TIMESTAMP WHERE ymid=? AND status='pending'").bind(eventType,rewardType,price,ymid),
-      env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,firebase_uid,'Coins',?,'monetag_ad_reward','Verified Monetag rewarded ad',ymid,? FROM monetag_reward_events WHERE ymid=? AND status='credited' AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,firebase_uid,'Coins',?,'monetag_ad_reward','Verified Monetag rewarded ad',ymid,? FROM monetag_reward_events WHERE changes()=1 AND ymid=? AND status='credited' AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
         .bind(crypto.randomUUID(),Number(event.reward_coins),key,ymid,key),
       env.DB.prepare("UPDATE users SET coins=coins+? WHERE changes()=1 AND firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=?)")
         .bind(Number(event.reward_coins),event.firebase_uid,key,event.firebase_uid)
