@@ -502,7 +502,7 @@ async function exchange(env,uid,b){
   if(!Number.isSafeInteger(amount)||amount<1||amount>1000000000||!idem(key))return json({success:false,error:"Enter a valid whole Coin amount and idempotency key"},400);
   const fee=Math.ceil(amount*EXCHANGE_FEE_BPS/10000),gems=amount-fee;if(gems<1)return json({success:false,error:"Amount is too small after fee"},400);
   const stmts=[
-    env.DB.prepare("UPDATE users SET coins=coins-? WHERE firebase_uid=? AND coins>=?").bind(amount,uid,amount),
+    env.DB.prepare("UPDATE users SET coins=coins-? WHERE firebase_uid=? AND coins>=? AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(amount,uid,amount,key),
     env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'coin_to_gem_exchange','Exchange Coins to Gems (1% fee)',?,? WHERE changes()=1")
       .bind(crypto.randomUUID(),uid,-amount,String(gems),key),
     env.DB.prepare("UPDATE users SET gems=gems+? WHERE changes()=1 AND firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='coin_to_gem_exchange')").bind(gems,uid,key,uid),
