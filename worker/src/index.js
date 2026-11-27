@@ -45,9 +45,22 @@ async function auth(req){
   if(claims.aud!==PROJECT||claims.iss!=="https://securetoken.google.com/"+PROJECT||!claims.sub||claims.sub.length>128||claims.sub!==claims.user_id||!claims.exp||claims.exp<=now||!claims.iat||claims.iat>now+300||!claims.auth_time||claims.auth_time>now+300)throw new Error("Expired or invalid token");
   return claims;
 }
-function cfg(island,box){
-  const factor=Math.pow(2,island-1),rateFactor=Math.pow(1.5,island-1);
-  return {price:Math.round(BOX_PRICES_1[box-1]*factor),rate:Math.round(BOX_RATES_1[box-1]*rateFactor)};
+async function loadGameConfig(env){
+  const {results=[]}=await env.DB.prepare("SELECT island_number,unlock_cost_gems,box_prices_json,box_rates_json,storage_cap FROM island_configs ORDER BY island_number").all();
+  return Array.from({length:10},(_,i)=>{
+    const n=i+1,row=results.find(x=>Number(x.island_number)===n);
+    const factor=Math.pow(2,i),rateFactor=Math.pow(1.5,i);
+    let prices,rates;
+    try{prices=JSON.parse(row?.box_prices_json||"");}catch{}
+    try{rates=JSON.parse(row?.box_rates_json||"");}catch{}
+    if(!Array.isArray(prices)||prices.length!==10)prices=BOX_PRICES_1.map(x=>Math.round(x*factor));
+    if(!Array.isArray(rates)||rates.length!==10)rates=BOX_RATES_1.map(x=>Math.round(x*rateFactor));
+    return {island_number:n,unlock_cost_gems:Number(row?.unlock_cost_gems??ISLAND_UNLOCK[i]),box_prices:prices.map(Number),box_rates:rates.map(Number),storage_cap:Number(row?.storage_cap??(i===0?1500:0))};
+  });
+}
+function cfg(config,island,box){
+  const row=config[island-1];
+  return {price:Number(row.box_prices[box-1]),rate:Number(row.box_rates[box-1])};
 }
 function idem(v){return typeof v==="string"&&/^[A-Za-z0-9_-]{12,100}$/.test(v);}
 async function body(req){try{return await req.json();}catch{return null;}}
@@ -56,7 +69,7 @@ async function ensureActive(env,uid){const u=await getUser(env,uid);if(!u||u.acc
 
 // Settles each unlocked island independently. The guarded timestamp update prevents
 // two concurrent requests from crediting the same elapsed interval twice.
-async function settle(env,uid){
+async function settle(env,uid,config){
   const now=Date.now();
   const {results=[]}=await env.DB.prepare("SELECT island_number,pending_coins,last_mining_at FROM user_islands WHERE firebase_uid=? AND is_unlocked=1").bind(uid).all();
   for(const row of results){
@@ -64,27 +77,28 @@ async function settle(env,uid){
     const then=Date.parse(String(row.last_mining_at).replace(" ","T")+"Z");
     if(!Number.isFinite(then)||now<=then)continue;
     const {results:boxes=[]}=await env.DB.prepare("SELECT box_number,open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=?").bind(uid,row.island_number).all();
-    let perDay=0;for(const b of boxes)perDay+=b.open_count*cfg(row.island_number,b.box_number).rate;
+    let perDay=0;for(const b of boxes)perDay+=b.open_count*cfg(config,row.island_number,b.box_number).rate;
     if(perDay<=0)continue;
     const elapsed=(now-then)/86400000;
     const earned=elapsed*perDay;
     if(earned<=0)continue;
-    const cap = Number(row.island_number) === 1 ? ISLAND_ONE_STORAGE_CAP : Number.MAX_SAFE_INTEGER;
-    const newPending=Math.min(cap,Number(row.pending_coins||0)+earned);
+    const configuredCap=Number(config[row.island_number-1]?.storage_cap||0);
+    const newPending=configuredCap>0?Math.min(configuredCap,Number(row.pending_coins||0)+earned):Number(row.pending_coins||0)+earned;
     const timestamp=new Date(now).toISOString().slice(0,19).replace("T"," ");
     await env.DB.prepare("UPDATE user_islands SET pending_coins=?,last_mining_at=? WHERE firebase_uid=? AND island_number=? AND last_mining_at=?")
       .bind(newPending,timestamp,uid,row.island_number,row.last_mining_at).run();
   }
 }
 async function gameState(env,uid){
-  await settle(env,uid);
+  const config=await loadGameConfig(env);
+  await settle(env,uid,config);
   const user=await getUser(env,uid);
   const {results:islands=[]}=await env.DB.prepare("SELECT island_number,is_unlocked,pending_coins,last_mining_at FROM user_islands WHERE firebase_uid=? ORDER BY island_number").bind(uid).all();
   const {results:boxes=[]}=await env.DB.prepare("SELECT island_number,box_number,open_count FROM user_island_boxes WHERE firebase_uid=? ORDER BY island_number,box_number").bind(uid).all();
   const islandRows=Array.from({length:10},(_,i)=>{
     const n=i+1,stored=islands.find(x=>x.island_number===n),isUnlocked=!!stored?.is_unlocked;
-    const b=Array.from({length:10},(_,j)=>{const c=cfg(n,j+1);return {box_number:j+1,price_gems:c.price,rate_coins_per_day:c.rate,open_count:boxes.find(x=>x.island_number===n&&x.box_number===j+1)?.open_count||0};});
-    return {island_number:n,unlock_cost_gems:ISLAND_UNLOCK[i],is_unlocked:isUnlocked,pending_coins:Number(stored?.pending_coins||0),boxes:b};
+    const b=Array.from({length:10},(_,j)=>{const c=cfg(config,n,j+1);return {box_number:j+1,price_gems:c.price,rate_coins_per_day:c.rate,open_count:boxes.find(x=>x.island_number===n&&x.box_number===j+1)?.open_count||0};});
+    return {island_number:n,unlock_cost_gems:config[i].unlock_cost_gems,storage_cap:config[i].storage_cap,is_unlocked:isUnlocked,pending_coins:Number(stored?.pending_coins||0),boxes:b};
   });
   return {success:true,user:{gems:user.gems,coins:user.coins},exchange:{coins_per_gem:1,fee_percent:1},islands:islandRows};
 }
@@ -101,7 +115,8 @@ async function syncUser(req,env){
 async function unlock(env,uid,b){
   const n=Number(b?.island_number);if(!Number.isInteger(n)||n<1||n>10)return json({success:false,error:"Invalid island"},400);
   const idemKey=b.idempotency_key;if(!idem(idemKey))return json({success:false,error:"A valid idempotency_key is required"},400);
-  const price=ISLAND_UNLOCK[n-1];
+  const config=await loadGameConfig(env);
+  const price=config[n-1].unlock_cost_gems;
   if(n>1){const prev=await env.DB.prepare("SELECT COUNT(*) AS total, COALESCE(MIN(open_count),0) AS min_open FROM user_island_boxes WHERE firebase_uid=? AND island_number=?").bind(uid,n-1).first();if(Number(prev?.total)!==10||Number(prev?.min_open)<10)return json({success:false,error:"Open all 10 boxes 10 times on the previous island first"},409);}
   const already=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
   if(already?.is_unlocked)return json({success:true,message:"Island already unlocked"});
@@ -147,8 +162,9 @@ async function openBox(env,uid,b){
   if(!Number.isInteger(n)||n<1||n>10||!Number.isInteger(box)||box<1||box>10||!idem(key))return json({success:false,error:"Invalid island, box or idempotency key"},400);
   const unlocked=await env.DB.prepare("SELECT is_unlocked FROM user_islands WHERE firebase_uid=? AND island_number=?").bind(uid,n).first();
   if(!unlocked?.is_unlocked)return json({success:false,error:"Island is locked"},403);
-  await settle(env,uid);
-  const {price}=cfg(n,box);
+  const config=await loadGameConfig(env);
+  await settle(env,uid,config);
+  const {price}=cfg(config,n,box);
   const stmts=[
     env.DB.prepare("UPDATE users SET gems=gems-? WHERE firebase_uid=? AND gems>=? AND EXISTS(SELECT 1 FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1) AND COALESCE((SELECT open_count FROM user_island_boxes WHERE firebase_uid=? AND island_number=? AND box_number=?),0)<10 AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
       .bind(price,uid,price,uid,n,uid,n,box,key),
@@ -168,7 +184,8 @@ async function openBox(env,uid,b){
 async function claim(env,uid,b){
   const n=Number(b?.island_number),key=b?.idempotency_key;
   if(!Number.isInteger(n)||n<1||n>10||!idem(key))return json({success:false,error:"Invalid island or idempotency key"},400);
-  await settle(env,uid);
+  const config=await loadGameConfig(env);
+  await settle(env,uid,config);
   const row=await env.DB.prepare("SELECT pending_coins FROM user_islands WHERE firebase_uid=? AND island_number=? AND is_unlocked=1").bind(uid,n).first();
   const pending=Number(row?.pending_coins||0);
   const amount=Math.floor(pending);
@@ -212,6 +229,27 @@ async function listWithdrawals(env,uid){
 }
 async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
+}
+async function adminIslandConfig(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  return json({success:true,islands:await loadGameConfig(env),admin_role:admin.role});
+}
+async function updateAdminIslandConfig(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const n=Number(b?.island_number),unlock=Number(b?.unlock_cost_gems),cap=Number(b?.storage_cap);
+  const prices=b?.box_prices,rates=b?.box_rates;
+  const validArray=a=>Array.isArray(a)&&a.length===10&&a.every(x=>Number.isSafeInteger(Number(x))&&Number(x)>=0&&Number(x)<=1000000000);
+  if(!Number.isInteger(n)||n<1||n>10||!Number.isSafeInteger(unlock)||unlock<0||unlock>1000000000||!Number.isFinite(cap)||cap<0||cap>100000000000||!validArray(prices)||!validArray(rates))
+    return json({success:false,error:"Invalid island configuration"},400);
+  try{
+    await env.DB.prepare("UPDATE island_configs SET unlock_cost_gems=?,box_prices_json=?,box_rates_json=?,storage_cap=?,updated_by=?,updated_at=CURRENT_TIMESTAMP WHERE island_number=?")
+      .bind(unlock,JSON.stringify(prices.map(Number)),JSON.stringify(rates.map(Number)),cap,uid,n).run();
+    await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,details) VALUES(?,?,?,?)")
+      .bind(crypto.randomUUID(),uid,"island_config_update",JSON.stringify({island_number:n,unlock_cost_gems:unlock,storage_cap:cap})).run();
+    return json({success:true,island:(await loadGameConfig(env))[n-1]});
+  }catch(e){console.error(e);return json({success:false,error:"Island configuration update failed"},500);}
 }
 async function adminWithdrawals(env,uid){
   const admin=await requireAdmin(env,uid);
@@ -276,6 +314,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/islands"&&req.method==="GET")return adminIslandConfig(env,c.sub);
+    if(u.pathname==="/api/admin/islands"&&req.method==="POST")return updateAdminIslandConfig(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/withdrawals"&&req.method==="GET")return adminWithdrawals(env,c.sub);
     if(u.pathname==="/api/admin/withdrawals/review"&&req.method==="POST")return reviewWithdrawal(env,c.sub,await body(req));
     return json({success:false,error:"Route not found"},404);
