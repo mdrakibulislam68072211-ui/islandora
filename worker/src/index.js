@@ -106,7 +106,7 @@ async function syncUser(req,env){
   let c;try{c=await auth(req);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   const uid=c.sub,email=c.email||"";if(!email)return json({success:false,error:"Email not available"},400);
   try{
-    await env.DB.prepare("INSERT INTO users(firebase_uid,email,gems,coins,signup_bonus_granted,account_status) VALUES(?,?,1000,0,1,'active') ON CONFLICT(firebase_uid) DO NOTHING").bind(uid,email).run();
+    await env.DB.prepare("INSERT INTO users(firebase_uid,email,gems,coins,signup_bonus_granted,account_status) VALUES(?,?,COALESCE((SELECT CAST(value AS INTEGER) FROM app_settings WHERE key='signup_bonus_gems'),1000),0,1,'active') ON CONFLICT(firebase_uid) DO NOTHING").bind(uid,email).run();
     await env.DB.prepare("UPDATE users SET email=?,updated_at=CURRENT_TIMESTAMP WHERE firebase_uid=?").bind(email,uid).run();
     const user=await getUser(env,uid);if(!user||user.account_status!=="active")return json({success:false,error:"Account unavailable"},403);
     return json({success:true,user});
@@ -584,6 +584,26 @@ async function adminAdjustWallet(env,uid,b){
     return json({success:true,user_uid:target,currency,adjustment:amount});
   }catch(e){console.error(e);return json({success:false,error:"Wallet adjustment failed"},500);}
 }
+async function adminSignupBonus(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const row=await env.DB.prepare("SELECT value FROM app_settings WHERE key='signup_bonus_gems'").first();
+  return json({success:true,signup_bonus_gems:Number(row?.value??1000)});
+}
+async function updateAdminSignupBonus(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const amount=Number(b?.signup_bonus_gems);
+  if(!Number.isSafeInteger(amount)||amount<0||amount>1000000000)
+    return json({success:false,error:"Signup bonus must be a whole number between 0 and 1,000,000,000"},400);
+  try{
+    await env.DB.prepare("INSERT INTO app_settings(key,value,updated_by,updated_at) VALUES('signup_bonus_gems',?,?,CURRENT_TIMESTAMP) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP")
+      .bind(String(amount),uid).run();
+    await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,details) VALUES(?,?,?,?)")
+      .bind(crypto.randomUUID(),uid,"signup_bonus_update",JSON.stringify({signup_bonus_gems:amount})).run();
+    return json({success:true,signup_bonus_gems:amount,message:"Updated for future new accounts only"});
+  }catch(e){console.error(e);return json({success:false,error:"Signup bonus setting could not be saved"},500);}
+}
 async function adminIslandConfig(env,uid){
   const admin=await requireAdmin(env,uid);
   if(!admin)return json({success:false,error:"Admin access required"},403);
@@ -687,6 +707,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/admin/overview"&&req.method==="GET")return adminOverview(env,c.sub);
     if(u.pathname==="/api/admin/users"&&req.method==="GET")return adminUsers(env,c.sub,u.searchParams.get("q")||"");
     if(u.pathname==="/api/admin/wallet/adjust"&&req.method==="POST")return adminAdjustWallet(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/signup-bonus"&&req.method==="GET")return adminSignupBonus(env,c.sub);
+    if(u.pathname==="/api/admin/signup-bonus"&&req.method==="POST")return updateAdminSignupBonus(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/islands"&&req.method==="GET")return adminIslandConfig(env,c.sub);
     if(u.pathname==="/api/admin/islands"&&req.method==="POST")return updateAdminIslandConfig(env,c.sub,await body(req));
     if(u.pathname==="/api/admin/withdrawals"&&req.method==="GET")return adminWithdrawals(env,c.sub);
