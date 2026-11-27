@@ -460,6 +460,7 @@
     renderIsland();
     updateStorage(pendingCoins);
     if (typeof loadWithdrawalHistory === "function") await loadWithdrawalHistory();
+    if (typeof loadAdPlacements === "function") await loadAdPlacements(user);
     if (typeof loadAdminPanel === "function") await loadAdminPanel(user);
   }
 
@@ -1055,6 +1056,40 @@
       withdrawalMessage.textContent = error.message;
     } finally {
       withdrawalButton.disabled = false;
+    }
+  });
+
+  let adsterraSettingId = null;
+  async function loadAdPlacements(user) {
+    try {
+      const data = await apiRequest(user, "/api/ads/placements");
+      const ad = data.ads?.find(item => item.provider === "Adsterra" && item.ad_type === "direct_link");
+      adsterraSettingId = ad?.id || null;
+      $("#adsterraCard").hidden = !adsterraSettingId;
+    } catch (error) {
+      adsterraSettingId = null;
+      $("#adsterraCard").hidden = true;
+    }
+  }
+  $("#adsterraButton").addEventListener("click", async () => {
+    if (!adsterraSettingId) return;
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      $("#adsterraMessage").textContent = "Allow pop-ups to open this optional link. The game remains available.";
+      return;
+    }
+    $("#adsterraButton").disabled = true;
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/ads/direct-open", "POST", {
+        ad_setting_id: adsterraSettingId
+      });
+      popup.location.href = result.url;
+      $("#adsterraMessage").textContent = "Partner offer opened in a new tab.";
+    } catch (error) {
+      popup.close();
+      $("#adsterraMessage").textContent = error.message;
+    } finally {
+      $("#adsterraButton").disabled = false;
     }
   });
 
