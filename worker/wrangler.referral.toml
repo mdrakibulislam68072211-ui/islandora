@@ -1,0 +1,9 @@
+name = "islandora-staging-referral-api"
+main = "src/referral.js"
+compatibility_date = "2026-11-20"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "islandora-staging-db"
+database_id = "889643d9-0f60-4c04-b9f7-80cd452b8202"
