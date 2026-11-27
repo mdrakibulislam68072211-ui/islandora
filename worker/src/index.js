@@ -329,13 +329,12 @@ async function monetagPostback(req,env){
   const event=await env.DB.prepare("SELECT firebase_uid,reward_coins,status FROM monetag_reward_events WHERE ymid=?").bind(ymid).first();
   if(!event)return json({success:false,error:"Unknown ad event"},404);
   if(event.status!=="pending")return json({success:true,duplicate:true});
-  // Click and impression callbacks share one ymid; never let a click
-  // arriving first consume the pending reward event.
-  if(eventType==="click")return json({success:true,credited:false,pending:true});
+  // Impression and click callbacks can arrive in either order and share one ymid.
+  // Keep non-valued events pending; a later valued event for the same show may still qualify.
   if(rewardType!=="valued"){
-    await env.DB.prepare("UPDATE monetag_reward_events SET status='ignored',event_type=?,reward_event_type=?,estimated_price=? WHERE ymid=? AND status='pending'")
+    await env.DB.prepare("UPDATE monetag_reward_events SET event_type=?,reward_event_type=?,estimated_price=? WHERE ymid=? AND status='pending'")
       .bind(eventType,rewardType,price,ymid).run();
-    return json({success:true,credited:false});
+    return json({success:true,credited:false,pending:true});
   }
   const key="monetag_reward:"+ymid;
   try{
