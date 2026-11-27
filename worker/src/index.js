@@ -295,6 +295,7 @@ async function requireAdmin(env,uid){
   return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
 }
 async function startMonetagReward(env,uid,b){
+  if(!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Monetag server verification is not configured"},503);
   const id=String(b?.ad_setting_id||"");
   const ad=await env.DB.prepare("SELECT id,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE id=? AND provider='Monetag' AND ad_type='rewarded' AND enabled=1").bind(id).first();
   let settings={};try{settings=JSON.parse(ad?.settings_json||"{}");}catch{}
@@ -356,7 +357,7 @@ async function monetagRewardStatus(env,uid,ymid){
 }
 async function listAdPlacements(env,uid){
   const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
-  return json({success:true,ads:results});
+  return json({success:true,ads:results.filter(ad=>ad.provider!=="Monetag"||!!env.MONETAG_POSTBACK_SECRET)});
 }
 async function openDirectAd(env,uid,b){
   const id=String(b?.ad_setting_id||"");
