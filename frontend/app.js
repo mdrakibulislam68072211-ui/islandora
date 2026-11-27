@@ -462,6 +462,7 @@
     updateStorage(pendingCoins);
     if (typeof loadWithdrawalHistory === "function") await loadWithdrawalHistory();
     if (typeof loadAdPlacements === "function") await loadAdPlacements(user);
+    if (typeof loadSpinState === "function") await loadSpinState(user);
     if (typeof loadAdminPanel === "function") await loadAdminPanel(user);
   }
 
@@ -1081,7 +1082,8 @@
     }
   });
 
-  let adsterraSettingId = null, monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
+  let spinAttemptId = null;
+  let monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
   let monetagSdkPromise = null;
   async function loadMonetagSdk() {
     if (monetagSdkPromise) return monetagSdkPromise;
@@ -1103,43 +1105,16 @@
   async function loadAdPlacements(user) {
     try {
       const data = await apiRequest(user, "/api/ads/placements");
-      const ad = data.ads?.find(item => item.provider === "Adsterra" && item.ad_type === "direct_link");
-      adsterraSettingId = ad?.id || null;
-      $("#adsterraCard").hidden = !adsterraSettingId;
       const rewarded = data.ads?.find(item => item.provider === "Monetag" && item.ad_type === "rewarded");
       monetagSettingId = rewarded?.id || null;
       monetagZone = rewarded?.placement_id || null;
       try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
       $("#monetagCard").hidden = !(telegram?.initData && monetagSettingId && monetagZone && monetagSdkUrl);
     } catch (error) {
-      adsterraSettingId = null;
-      $("#adsterraCard").hidden = true;
       monetagSettingId = null; monetagZone = null; monetagSdkUrl = null;
       $("#monetagCard").hidden = true;
     }
   }
-  $("#adsterraButton").addEventListener("click", async () => {
-    if (!adsterraSettingId) return;
-    const popup = window.open("about:blank", "_blank");
-    if (!popup) {
-      $("#adsterraMessage").textContent = "Allow pop-ups to open this optional link. The game remains available.";
-      return;
-    }
-    $("#adsterraButton").disabled = true;
-    try {
-      const result = await apiRequest(auth.currentUser, "/api/ads/direct-open", "POST", {
-        ad_setting_id: adsterraSettingId
-      });
-      popup.location.href = result.url;
-      $("#adsterraMessage").textContent = "Partner offer opened in a new tab.";
-    } catch (error) {
-      popup.close();
-      $("#adsterraMessage").textContent = error.message;
-    } finally {
-      $("#adsterraButton").disabled = false;
-    }
-  });
-
   $("#monetagButton").addEventListener("click", async () => {
     const button = $("#monetagButton"), message = $("#monetagMessage");
     if (!monetagSettingId || !monetagZone || !monetagSdkUrl || button.disabled) return;
@@ -1169,6 +1144,91 @@
     } catch (error) {
       message.textContent = error.message || "Ad unavailable. Please try again later.";
     } finally {
+      button.disabled = false;
+    }
+  });
+
+  async function loadSpinState(user) {
+    try {
+      const data = await apiRequest(user, "/api/spin/state");
+      const attempt = data.attempt;
+      spinAttemptId = attempt?.id || null;
+      const spinButton = $("#spinButton");
+      const adButton = $("#spinAdButton");
+      const claimButton = $("#spinClaimButton");
+      spinButton.disabled = !data.enabled || !!attempt;
+      spinButton.textContent = attempt ? "Already Spun Today" : "Spin Now";
+      adButton.hidden = !(attempt && attempt.status === "locked" && !attempt.ad_opened_at);
+      claimButton.hidden = !(attempt && attempt.status === "verified");
+      if (!attempt) {
+        $("#spinRewardValue").textContent = "—";
+        $("#spinMessage").textContent = data.enabled
+          ? "One spin is available today. Rewards remain locked until Adsterra verifies the completed ad."
+          : (data.reason || "Daily Spin is currently unavailable.");
+      } else {
+        $("#spinRewardValue").textContent = Number(attempt.reward_coins).toLocaleString() + " Coins";
+        if (attempt.status === "locked" && !attempt.ad_opened_at) {
+          $("#spinMessage").textContent = "LOCKED REWARD — Watch the Adsterra ad. Opening it alone will not unlock Coins.";
+        } else if (attempt.status === "locked") {
+          $("#spinMessage").textContent = "LOCKED REWARD — Waiting for Adsterra's approved server verification.";
+        } else if (attempt.status === "verified") {
+          $("#spinMessage").textContent = "AD VERIFIED — Claim your " + Number(attempt.reward_coins).toLocaleString() + " Coins.";
+        } else {
+          $("#spinMessage").textContent = "REWARD CLAIMED — Your next spin is available tomorrow.";
+        }
+      }
+    } catch (error) {
+      $("#spinButton").disabled = true;
+      $("#spinMessage").textContent = error.message || "Daily Spin status unavailable.";
+    }
+  }
+
+  $("#spinButton").addEventListener("click", async () => {
+    const button = $("#spinButton");
+    button.disabled = true;
+    try {
+      await apiRequest(auth.currentUser, "/api/spin", "POST", {
+        idempotency_key: makeIdempotencyKey()
+      });
+      await loadSpinState(auth.currentUser);
+    } catch (error) {
+      $("#spinMessage").textContent = error.message;
+      button.disabled = false;
+    }
+  });
+
+  $("#spinAdButton").addEventListener("click", async () => {
+    if (!spinAttemptId) return;
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      $("#spinMessage").textContent = "Allow pop-ups to open the optional ad. The reward will remain locked until server verification.";
+      return;
+    }
+    const button = $("#spinAdButton");
+    button.disabled = true;
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/spin/ad-open", "POST", {
+        spin_id: spinAttemptId
+      });
+      popup.location.href = result.url;
+      $("#spinMessage").textContent = "Ad opened. Your reward remains locked until Adsterra sends an approved completion verification.";
+      await loadSpinState(auth.currentUser);
+    } catch (error) {
+      popup.close();
+      $("#spinMessage").textContent = error.message;
+      button.disabled = false;
+    }
+  });
+
+  $("#spinClaimButton").addEventListener("click", async () => {
+    if (!spinAttemptId) return;
+    const button = $("#spinClaimButton");
+    button.disabled = true;
+    try {
+      await apiRequest(auth.currentUser, "/api/spin/claim", "POST", { spin_id: spinAttemptId });
+      await loadGameState(auth.currentUser);
+    } catch (error) {
+      $("#spinMessage").textContent = error.message;
       button.disabled = false;
     }
   });
@@ -1220,10 +1280,19 @@
       await loadAdminIslandConfig(user);
       await loadAdminWithdrawals(user);
       await loadAdminAds(user);
+      await loadAdminSpin(user);
     } catch (error) {
       adminPanel.hidden = true;
       adminNavItem.hidden = true;
     }
+  }
+
+  async function loadAdminSpin(user) {
+    const data = await apiRequest(user, "/api/admin/spin");
+    $("#adminSpinEnabled").checked = Number(data.settings?.enabled || 0) === 1;
+    $("#adminSpinRewards").value = (data.options || []).map(option =>
+      Number(option.reward_coins) + ":" + (Number(option.probability_bps) / 100)
+    ).join(",");
   }
 
   async function loadAdminAds(user) {
@@ -1253,6 +1322,32 @@
       $("#adminAdMessage").textContent = "Ad settings saved.";
       await loadAdminAds(auth.currentUser);
     } catch (error) { $("#adminAdMessage").textContent = error.message; }
+  });
+
+  $("#adminSaveSpin").addEventListener("click", async () => {
+    const message = $("#adminSpinMessage");
+    try {
+      const options = $("#adminSpinRewards").value.split(",").map((pair,index) => {
+        const parts = pair.trim().split(":");
+        if (parts.length !== 2) throw new Error("Use reward:percent pairs separated by commas.");
+        const reward_coins = Number(parts[0].trim());
+        const percent = Number(parts[1].trim());
+        if (!Number.isSafeInteger(reward_coins) || !Number.isFinite(percent) || percent < 0) {
+          throw new Error("Each reward must be a whole Coin amount with a valid probability.");
+        }
+        const probability_bps = Math.round(percent * 100);
+        if (Math.abs(probability_bps / 100 - percent) > 0.000001) throw new Error("Probabilities may use at most two decimal places.");
+        return { reward_coins, probability_bps };
+      });
+      const total = options.reduce((sum,item) => sum + item.probability_bps,0);
+      if (total !== 10000) throw new Error("All probabilities must total exactly 100%.");
+      await apiRequest(auth.currentUser, "/api/admin/spin", "POST", {
+        enabled: $("#adminSpinEnabled").checked,
+        options
+      });
+      message.textContent = "Spin settings saved.";
+      await loadAdminSpin(auth.currentUser);
+    } catch (error) { message.textContent = error.message; }
   });
 
   adminIslandNumber.addEventListener("change", async () => {
@@ -1340,7 +1435,7 @@
       } else if (target === "#profile") {
         openProfilePanel();
 
-      } else if (target === "#wallet" || target === "#admin") {
+      } else if (target === "#wallet" || target === "#spin" || target === "#adminPanel") {
         document.querySelector(target)?.scrollIntoView({ behavior: "smooth" });
       } else {
         showToast(item.textContent.trim() + " will be available soon.");
