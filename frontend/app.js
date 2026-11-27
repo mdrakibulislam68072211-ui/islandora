@@ -459,6 +459,7 @@
     pendingCoins = Number(gameStateData.islands?.[selectedIsland]?.pending_coins || 0);
     renderIsland();
     updateStorage(pendingCoins);
+    if (typeof loadWithdrawalHistory === "function") await loadWithdrawalHistory();
   }
 
   function makeIdempotencyKey() { return crypto.randomUUID().replace(/-/g, ""); }
@@ -1055,8 +1056,6 @@
       withdrawalButton.disabled = false;
     }
   });
-
-  loadWithdrawalHistory();
 
   // ==========================================
   // BOTTOM NAVIGATION
