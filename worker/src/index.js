@@ -764,15 +764,6 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
   const u=new URL(req.url);
   if(req.method==="OPTIONS")return new Response(null,{status:204,headers:CORS});
   if(u.pathname==="/api/telegram/webhook"&&req.method==="POST")return telegramWebhook(req,env);
-  if(u.pathname==="/internal/telegram/configure-webhook"&&(req.method==="POST"||req.method==="GET")){
-    if(req.method==="GET"){
-      const supplied=u.searchParams.get("key")||"";
-      if(!env.TELEGRAM_WEBHOOK_SECRET||supplied!==env.TELEGRAM_WEBHOOK_SECRET)return json({success:false,error:"Unauthorized"},401);
-      const synthetic=new Request(req.url,{method:"POST",headers:{"X-Webhook-Setup-Secret":supplied}});
-      return configureTelegramWebhook(synthetic,env);
-    }
-    return configureTelegramWebhook(req,env);
-  }
   if((u.pathname==="/"||u.pathname==="/health")&&req.method==="GET"){
     try{const r=await env.DB.prepare("SELECT 1 AS connected").first();return json({success:true,app:"Islandora",worker:"online",database:r?.connected===1?"connected":"error"});}
     catch{return json({success:false,error:"Database unavailable"},500);}
