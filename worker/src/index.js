@@ -98,7 +98,7 @@ async function gameState(env,uid){
   const islandRows=Array.from({length:10},(_,i)=>{
     const n=i+1,stored=islands.find(x=>x.island_number===n),isUnlocked=!!stored?.is_unlocked;
     const b=Array.from({length:10},(_,j)=>{const c=cfg(config,n,j+1);return {box_number:j+1,price_gems:c.price,rate_coins_per_day:c.rate,open_count:boxes.find(x=>x.island_number===n&&x.box_number===j+1)?.open_count||0};});
-    return {island_number:n,unlock_cost_gems:config[i].unlock_cost_gems,storage_cap:config[i].storage_cap,is_unlocked:isUnlocked,pending_coins:Number(stored?.pending_coins||0),boxes:b};
+    return {island_number:n,unlock_cost_gems:config[i].unlock_cost_gems,storage_cap:config[i].storage_cap,is_unlocked:isUnlocked,pending_coins:Number(stored?.pending_coins||0),last_mining_at:stored?.last_mining_at||null,boxes:b};
   });
   return {success:true,user:{gems:user.gems,coins:user.coins},exchange:{coins_per_gem:1,fee_percent:1},islands:islandRows};
 }
