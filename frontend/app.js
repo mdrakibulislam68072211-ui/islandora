@@ -500,12 +500,6 @@
 
         await loadGameState(user);
 
-        console.info(
-            "Islandora account synchronized with D1:",
-            backendUser
-          );
-        }
-
       } catch (error) {
         console.error(
           "Backend synchronization error:",
