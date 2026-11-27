@@ -473,6 +473,7 @@
     pendingCoins = Number(gameStateData.islands?.[selectedIsland]?.pending_coins || 0);
     renderIsland();
     updateStorage(pendingCoins);
+    renderLiveMining();
     if (typeof loadWithdrawalHistory === "function") await loadWithdrawalHistory();
     if (typeof loadAdPlacements === "function") await loadAdPlacements(user);
     if (typeof loadSpinState === "function") await loadSpinState(user);
@@ -815,6 +816,7 @@
     renderIslandList();
     renderBoxes();
     renderMiningProjection();
+    renderLiveMining();
   }
 
   function renderMiningProjection() {
@@ -1569,18 +1571,51 @@
     });
   });
 
-  // Sequential live mining indicator: 1, 2, 3 ... 10, then repeat.
-  let liveMiningNumber = 1;
-  const liveMiningCounter = $("#liveMiningCounter");
-  if (liveMiningCounter) {
-    window.setInterval(() => {
-      liveMiningNumber = liveMiningNumber >= 10 ? 1 : liveMiningNumber + 1;
-      liveMiningCounter.textContent = String(liveMiningNumber);
-      liveMiningCounter.classList.remove("is-changing");
-      void liveMiningCounter.offsetWidth;
-      liveMiningCounter.classList.add("is-changing");
-    }, 900);
+  // Display server-backed pending Coins with a smooth local estimate between
+  // server syncs. The server remains authoritative for settlement and storage caps.
+  function renderLiveMining() {
+    const island = gameStateData?.islands?.[selectedIsland];
+    const amountElement = $("#liveMiningAmount");
+    const messageElement = $("#liveMiningMessage");
+    const dot = $("#liveMiningDot");
+    if (!island || !island.is_unlocked) {
+      if (amountElement) amountElement.textContent = "0.00 Coins";
+      if (messageElement) messageElement.textContent = "Unlock this island to start mining";
+      if (dot) dot.classList.remove("is-active");
+      return;
+    }
+
+    const dailyRate = (island.boxes || []).reduce((sum, box) =>
+      sum + Number(box.rate_coins_per_day || 0) * Number(box.open_count || 0), 0);
+    const serverPending = Math.max(0, Number(island.pending_coins || 0));
+    const cap = Number(island.storage_cap || 0);
+    const startedAt = island.last_mining_at
+      ? Date.parse(String(island.last_mining_at).replace(" ", "T") + "Z")
+      : NaN;
+    const elapsedMs = Number.isFinite(startedAt) ? Math.max(0, Date.now() - startedAt) : 0;
+    let livePending = serverPending + (dailyRate > 0 ? dailyRate * elapsedMs / 86400000 : 0);
+    if (cap > 0) livePending = Math.min(cap, livePending);
+    updateStorage(livePending);
+
+    if (amountElement) amountElement.textContent =
+      livePending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + " Coins";
+    if (dailyRate <= 0) {
+      if (messageElement) messageElement.textContent = "Open a mining box to start earning";
+      if (dot) dot.classList.remove("is-active");
+    } else if (cap > 0 && livePending >= cap) {
+      if (messageElement) messageElement.textContent = "Storage full — claim your Coins";
+      if (dot) dot.classList.remove("is-active");
+    } else if (!Number.isFinite(startedAt)) {
+      if (messageElement) messageElement.textContent = "Waiting for mining to start";
+      if (dot) dot.classList.remove("is-active");
+    } else {
+      if (messageElement) messageElement.textContent = "Mining in progress · +" +
+        Math.max(0, livePending - serverPending).toFixed(4) + " Coins";
+      if (dot) dot.classList.add("is-active");
+    }
   }
+
+  window.setInterval(renderLiveMining, 1000);
 
   // Keep Wallet and Spin as dedicated pages on first load.
   showAppSection("#home");
