@@ -460,6 +460,7 @@
     renderIsland();
     updateStorage(pendingCoins);
     if (typeof loadWithdrawalHistory === "function") await loadWithdrawalHistory();
+    if (typeof loadAdminPanel === "function") await loadAdminPanel(user);
   }
 
   function makeIdempotencyKey() { return crypto.randomUUID().replace(/-/g, ""); }
@@ -1057,6 +1058,119 @@
     }
   });
 
+  const adminPanel = $("#adminPanel");
+  const adminNavItem = $("#adminNavItem");
+  const adminIslandNumber = $("#adminIslandNumber");
+
+  async function loadAdminIslandConfig(user) {
+    const data = await apiRequest(user, "/api/admin/islands");
+    const island = data.islands[Number(adminIslandNumber.value)-1];
+    $("#adminUnlockCost").value = island.unlock_cost_gems;
+    $("#adminBoxPrices").value = island.box_prices.join(",");
+    $("#adminBoxRates").value = island.box_rates.join(",");
+    $("#adminStorageCap").value = island.storage_cap;
+  }
+
+  async function loadAdminWithdrawals(user) {
+    const data = await apiRequest(user, "/api/admin/withdrawals");
+    const list = $("#adminWithdrawalList");
+    list.replaceChildren();
+    if (!data.withdrawals.length) { list.textContent = "No withdrawal requests."; return; }
+    data.withdrawals.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "withdrawal-history-row";
+      const summary = document.createElement("p");
+      summary.textContent = `${item.firebase_uid} · ${Number(item.amount).toLocaleString()} Coins · ${item.payment_method} · ${item.status.toUpperCase()} · ${item.payment_details}`;
+      row.appendChild(summary);
+      if (item.status === "pending") {
+        ["approved","rejected"].forEach(status => {
+          const button = document.createElement("button");
+          button.type = "button"; button.className = "open-button";
+          button.dataset.withdrawalId = item.id; button.dataset.withdrawalStatus = status;
+          button.textContent = status === "approved" ? "Approve" : "Reject & Refund";
+          row.appendChild(button);
+        });
+      }
+      list.appendChild(row);
+    });
+  }
+
+  async function loadAdminPanel(user) {
+    try {
+      const data = await apiRequest(user, "/api/admin/overview");
+      adminPanel.hidden = false;
+      adminNavItem.hidden = false;
+      $("#adminOverview").textContent =
+        `Users: ${data.users} · Gems: ${data.total_gems.toLocaleString()} · Coins: ${data.total_coins.toLocaleString()} · Pending withdrawals: ${data.pending_withdrawals} · Valid referrals: ${data.valid_referrals}`;
+      await loadAdminIslandConfig(user);
+      await loadAdminWithdrawals(user);
+    } catch (error) {
+      adminPanel.hidden = true;
+      adminNavItem.hidden = true;
+    }
+  }
+
+  adminIslandNumber.addEventListener("change", async () => {
+    try { await loadAdminIslandConfig(auth.currentUser); }
+    catch (error) { $("#adminIslandMessage").textContent = error.message; }
+  });
+  $("#adminSaveIsland").addEventListener("click", async () => {
+    const parseList = value => value.split(",").map(x => Number(x.trim()));
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/admin/islands", "POST", {
+        island_number: Number(adminIslandNumber.value),
+        unlock_cost_gems: Number($("#adminUnlockCost").value),
+        box_prices: parseList($("#adminBoxPrices").value),
+        box_rates: parseList($("#adminBoxRates").value),
+        storage_cap: Number($("#adminStorageCap").value)
+      });
+      $("#adminIslandMessage").textContent = "Island settings saved.";
+      await loadGameState(auth.currentUser);
+    } catch (error) { $("#adminIslandMessage").textContent = error.message; }
+  });
+  $("#adminSearchButton").addEventListener("click", async () => {
+    try {
+      const q = encodeURIComponent($("#adminUserSearch").value.trim());
+      const data = await apiRequest(auth.currentUser, "/api/admin/users?q=" + q);
+      const list = $("#adminUsersList"); list.replaceChildren();
+      data.users.forEach(user => {
+        const row = document.createElement("div"); row.className = "withdrawal-history-row";
+        row.textContent = `${user.email} · ${user.firebase_uid} · ${user.gems} Gems · ${user.coins} Coins`;
+        row.addEventListener("click", () => { $("#adminTargetUid").value = user.firebase_uid; });
+        list.appendChild(row);
+      });
+      if (!data.users.length) list.textContent = "No users found.";
+    } catch (error) { $("#adminUsersList").textContent = error.message; }
+  });
+  $("#adminAdjustButton").addEventListener("click", async () => {
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/admin/wallet/adjust", "POST", {
+        user_uid: $("#adminTargetUid").value.trim(),
+        currency: $("#adminCurrency").value,
+        amount: Number($("#adminAdjustment").value),
+        description: $("#adminAdjustmentNote").value,
+        idempotency_key: makeIdempotencyKey()
+      });
+      $("#adminAdjustMessage").textContent = "Balance adjustment applied.";
+      await loadAdminPanel(auth.currentUser);
+    } catch (error) { $("#adminAdjustMessage").textContent = error.message; }
+  });
+  $("#adminRefreshWithdrawals").addEventListener("click", () => loadAdminWithdrawals(auth.currentUser));
+  $("#adminWithdrawalList").addEventListener("click", async event => {
+    const button = event.target.closest("[data-withdrawal-id]");
+    if (!button) return;
+    button.disabled = true;
+    try {
+      await apiRequest(auth.currentUser, "/api/admin/withdrawals/review", "POST", {
+        withdrawal_id: button.dataset.withdrawalId,
+        status: button.dataset.withdrawalStatus,
+        admin_note: ""
+      });
+      await loadAdminWithdrawals(auth.currentUser);
+      await loadAdminPanel(auth.currentUser);
+    } catch (error) { showToast(error.message); button.disabled = false; }
+  });
+
   // ==========================================
   // BOTTOM NAVIGATION
   // ==========================================
@@ -1081,7 +1195,7 @@
       } else if (target === "#profile") {
         openProfilePanel();
 
-      } else if (target === "#wallet") {
+      } else if (target === "#wallet" || target === "#admin") {
         document.querySelector(target)?.scrollIntoView({ behavior: "smooth" });
       } else {
         showToast(item.textContent.trim() + " will be available soon.");
