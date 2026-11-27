@@ -207,8 +207,8 @@ async function processReferralOutbox(env, onlyUid=null) {
         body:JSON.stringify({referred_uid:item.referred_uid})
       });
       if (response.ok) {
-        await env.DB.prepare("UPDATE referral_callback_outbox SET status='delivered',updated_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=? AND status='pending'").bind(item.id).run();
         await creditReferralCommissions(env,item.referred_uid);
+        await env.DB.prepare("UPDATE referral_callback_outbox SET status='delivered',updated_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=? AND status='pending'").bind(item.id).run();
       } else {
         const delay=Math.min(21600,60*Math.pow(2,Math.min(Number(item.attempts)||0,8)));
         await env.DB.prepare("UPDATE referral_callback_outbox SET attempts=attempts+1,next_attempt_at=datetime('now','+'||?||' seconds'),last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(delay,"HTTP "+response.status,item.id).run();
