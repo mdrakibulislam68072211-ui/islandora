@@ -169,7 +169,9 @@ async function telegramWebhook(req,env){
   if(req.headers.get("X-Telegram-Bot-Api-Secret-Token")!==secret)return json({success:false,error:"Unauthorized"},401);
   const update=await body(req);
   const message=update?.message;
-  const match=typeof message?.text==="string"?message.text.trim().match(/^\/start(?:\s+([^\s]+))?/):null;
+  const startParts=typeof message?.text==="string"?message.text.trim().split(" "):[];
+  const isStart=startParts[0]==="/start"||startParts[0]==="/start@Islandora_Bot";
+  const match=isStart?["/start",startParts[1]||""]:null;
   if(message?.chat?.id&&match){
     try{await telegramSendStart(env,message.chat.id,match[1]||"");}
     catch(e){console.error("Telegram start reply failed",e);return json({success:false,error:"Unable to send Telegram reply"},502);}
