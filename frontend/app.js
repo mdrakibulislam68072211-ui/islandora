@@ -1518,33 +1518,67 @@
   // BOTTOM NAVIGATION
   // ==========================================
 
+  function showAppSection(target) {
+    const homeHero = $("#islandHero");
+    const miningSection = $("#mining");
+    const walletSection = $("#wallet");
+    const spinSection = $("#spin");
+    const adminSection = $("#adminPanel");
+
+    if (homeHero) homeHero.hidden = target !== "#home";
+    if (miningSection) miningSection.hidden = !["#home", "#mining"].includes(target);
+    if (walletSection) walletSection.hidden = target !== "#wallet";
+    if (spinSection) spinSection.hidden = target !== "#spin";
+    if (adminSection) adminSection.hidden = target !== "#adminPanel";
+
+    const mainWorld = document.querySelector(".main-world");
+    if (mainWorld) mainWorld.classList.toggle("single-section-view", !["#home", "#mining"].includes(target));
+
+    if (target === "#home") {
+      $("#home")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (target === "#mining") {
+      miningSection?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      document.querySelector(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
+
   document.querySelectorAll(".nav-item").forEach(item => {
     item.addEventListener("click", event => {
       event.preventDefault();
-
-      document.querySelectorAll(".nav-item").forEach(nav => {
-        nav.classList.remove("active");
-      });
-
-      item.classList.add("active");
-
       const target = item.getAttribute("href");
 
-      if (target === "#home" || target === "#mining") {
-        document.querySelector(target)?.scrollIntoView({
-          behavior: "smooth"
-        });
-
-      } else if (target === "#profile") {
+      if (target === "#profile") {
         openProfilePanel();
-
-      } else if (target === "#wallet" || target === "#spin" || target === "#adminPanel") {
-        document.querySelector(target)?.scrollIntoView({ behavior: "smooth" });
-      } else {
-        showToast(item.textContent.trim() + " will be available soon.");
+        return;
       }
+
+      if (target === "#referral") {
+        showToast("Referral section will be available soon.");
+        return;
+      }
+
+      document.querySelectorAll(".nav-item").forEach(nav => nav.classList.remove("active"));
+      item.classList.add("active");
+      showAppSection(target);
     });
   });
+
+  // Sequential live mining indicator: 1, 2, 3 ... 10, then repeat.
+  let liveMiningNumber = 1;
+  const liveMiningCounter = $("#liveMiningCounter");
+  if (liveMiningCounter) {
+    window.setInterval(() => {
+      liveMiningNumber = liveMiningNumber >= 10 ? 1 : liveMiningNumber + 1;
+      liveMiningCounter.textContent = String(liveMiningNumber);
+      liveMiningCounter.classList.remove("is-changing");
+      void liveMiningCounter.offsetWidth;
+      liveMiningCounter.classList.add("is-changing");
+    }, 900);
+  }
+
+  // Keep Wallet and Spin as dedicated pages on first load.
+  showAppSection("#home");
 
   // ==========================================
   // INITIALIZE GAME
