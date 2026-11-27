@@ -633,6 +633,12 @@
             <button class="open-button" id="adsterraButton" type="button">Open Partner Offer</button>
             <small id="adsterraMessage"></small>
           </div>
+          <div class="wallet-exchange-card" id="monetagCard" hidden>
+            <h3>🎁 Watch a Rewarded Ad</h3>
+            <p>Coins are credited only after Monetag confirms a valued impression on the server. Closing early or an unverified ad earns no reward.</p>
+            <button class="open-button" id="monetagButton" type="button">Watch Ad for Coins</button>
+            <small id="monetagMessage"></small>
+          </div>
           <div class="wallet-exchange-card withdrawal-card">
             <h3>🏦 Request Withdrawal</h3>
             <p>Minimum 10,000 Coins and at least 5 valid referrals. Requests are reviewed manually.</p>
@@ -697,7 +703,8 @@
             <select id="adminAdProvider"><option>Adsterra</option><option>Monetag</option></select>
             <label for="adminAdName">Ad name</label><input id="adminAdName" type="text" maxlength="100">
             <label for="adminAdUrl">Adsterra direct link (HTTPS)</label><input id="adminAdUrl" type="url" placeholder="https://...">
-            <label for="adminAdPlacement">Monetag placement ID</label><input id="adminAdPlacement" type="text">
+            <label for="adminAdPlacement">Monetag main zone ID</label><input id="adminAdPlacement" type="text" inputmode="numeric">
+            <label for="adminAdSdkUrl">Monetag SDK script URL (from publisher dashboard)</label><input id="adminAdSdkUrl" type="url" placeholder="https://.../sdk.js">
             <label for="adminAdCooldown">Cooldown hours</label><input id="adminAdCooldown" type="number" min="0" max="720" value="24">
             <label for="adminAdDailyLimit">Daily limit</label><input id="adminAdDailyLimit" type="number" min="0" max="1000" value="1">
             <label for="adminAdReward">Reward Coins (Monetag only)</label><input id="adminAdReward" type="number" min="0" value="0">
