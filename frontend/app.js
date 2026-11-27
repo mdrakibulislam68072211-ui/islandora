@@ -422,7 +422,26 @@
   const API_BASE_URL =
     window.APP_CONFIG?.API_BASE_URL?.replace(/\/+$/, "");
 
-  async function syncUserWithBackend(user) {
+
+  async function linkTelegramWithBackend(user) {
+    const initData = telegram?.initData;
+    if (!initData || !API_BASE_URL) return null;
+    const idToken = await user.getIdToken();
+    const response = await fetch(`${API_BASE_URL}/api/telegram/link`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${idToken}`
+      },
+      body: JSON.stringify({ init_data: initData })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || data.error || "Telegram account linking failed.");
+    }
+    return data;
+  }
+\n  async function syncUserWithBackend(user) {
     if (!API_BASE_URL) {
       throw new Error("Backend API URL is missing.");
     }
@@ -535,6 +554,16 @@
             Number(backendUser.gems || 0).toLocaleString();
 
           backendSyncedUid = user.uid;
+        }
+
+        if (telegram?.initData) {
+          try {
+            const linked = await linkTelegramWithBackend(user);
+            if (linked?.linked) console.info("Islandora Telegram account linked.");
+          } catch (telegramError) {
+            console.error("Telegram account linking:", telegramError);
+            showToast("Telegram link could not be confirmed: " + telegramError.message);
+          }
         }
 
         referralSetupReady = await waitForReferralSetup(user.uid);
