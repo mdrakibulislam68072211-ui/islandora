@@ -128,8 +128,70 @@ async function unlock(env,uid,b){
     env.DB.prepare("INSERT INTO user_islands(id,firebase_uid,island_number,is_unlocked,pending_coins,last_mining_at,unlocked_at) SELECT ?,?,?,1,0,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='island_unlock') ON CONFLICT(firebase_uid,island_number) DO UPDATE SET is_unlocked=1,last_mining_at=CURRENT_TIMESTAMP,unlocked_at=CURRENT_TIMESTAMP")
       .bind(crypto.randomUUID(),uid,n,idemKey,uid)
   ];
-  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);return json({success:true,island_number:n,cost_gems:price});}
+  try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);await creditReferralCommissions(env,uid);return json({success:true,island_number:n,cost_gems:price});}
   catch(e){console.error(e);return json({success:false,error:"Island unlock failed"},500);}
+}
+async function creditReferralCommissions(env,referredUid){
+  // 15% of qualifying Gems spent becomes Coins, held in thousandths so
+  // fractional commission is preserved until the referrer claims whole Coins.
+  await env.DB.prepare(`INSERT OR IGNORE INTO referral_commission_ledger
+    (id,referrer_uid,referred_uid,source_transaction_id,spent_gems,commission_milli_coins)
+    SELECT ?,r.referrer_uid,r.referred_uid,w.id,ABS(w.amount),ABS(w.amount)*150
+    FROM referrals r
+    JOIN wallet_transactions w ON w.firebase_uid=r.referred_uid
+    WHERE r.referred_uid=? AND r.is_valid=1
+      AND w.currency='Gems' AND w.amount<0
+      AND w.transaction_type IN ('box_open','island_unlock')
+      AND NOT EXISTS(SELECT 1 FROM referral_commission_ledger l WHERE l.source_transaction_id=w.id)`)
+    .bind(crypto.randomUUID(),referredUid).run();
+}
+async function referralCommissionInfo(env,uid){
+  const row=await env.DB.prepare(`SELECT
+    COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0)-
+    COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_claims WHERE referrer_uid=?),0) AS balance_milli,
+    COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0) AS earned_milli,
+    (SELECT COUNT(*) FROM referrals WHERE referrer_uid=? AND is_valid=1) AS valid_referrals`)
+    .bind(uid,uid,uid,uid).first();
+  return json({success:true,balance_coins:Number(row?.balance_milli||0)/1000,
+    earned_coins:Number(row?.earned_milli||0)/1000,
+    claimable_coins:Math.floor(Number(row?.balance_milli||0)/1000),
+    valid_referrals:Number(row?.valid_referrals||0),minimum_claim:5});
+}
+async function claimReferralCommission(env,uid,b){
+  const key=b?.idempotency_key;
+  if(!idem(key))return json({success:false,error:"A valid idempotency_key is required"},400);
+  const row=await env.DB.prepare(`SELECT
+    COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0)-
+    COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_claims WHERE referrer_uid=?),0) AS balance_milli`)
+    .bind(uid,uid).first();
+  const coins=Math.floor(Number(row?.balance_milli||0)/1000);
+  if(coins<5)return json({success:false,error:"At least 5 whole referral Coins are required to claim"},409);
+  const consumed=coins*1000;
+  try{
+    const r=await env.DB.batch([
+      env.DB.prepare(`INSERT INTO referral_commission_claims
+        (id,referrer_uid,commission_milli_coins,coins_claimed,idempotency_key)
+        SELECT ?,?,?,?,?
+        WHERE (
+          COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0)-
+          COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_claims WHERE referrer_uid=?),0)
+        )>=5000
+        AND NOT EXISTS(SELECT 1 FROM referral_commission_claims WHERE idempotency_key=?)`)
+        .bind(crypto.randomUUID(),uid,consumed,coins,key,uid,uid,key),
+      env.DB.prepare(`INSERT INTO wallet_transactions
+        (id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key)
+        SELECT ?,?,'Coins',?,'referral_commission_claim','Claim referral commission',?,?
+        WHERE changes()=1`)
+        .bind(crypto.randomUUID(),uid,coins,key,key),
+      env.DB.prepare(`UPDATE users SET coins=coins+?
+        WHERE firebase_uid=? AND changes()=1`).bind(coins,uid)
+    ]);
+    if(!r[0]?.meta?.changes)return json({success:false,error:"Referral balance is below minimum or request already used"},409);
+    const remaining=await env.DB.prepare(`SELECT
+      COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_ledger WHERE referrer_uid=?),0)-
+      COALESCE((SELECT SUM(commission_milli_coins) FROM referral_commission_claims WHERE referrer_uid=?),0) AS balance_milli`).bind(uid,uid).first();
+    return json({success:true,claimed_coins:coins,remaining_coins:Number(remaining?.balance_milli||0)/1000});
+  }catch(e){console.error(e);return json({success:false,error:"Referral commission claim failed"},500);}
 }
 async function processReferralOutbox(env, onlyUid=null) {
   if (!env.REFERRAL_API_URL || !env.INTERNAL_API_SECRET) return;
@@ -146,6 +208,7 @@ async function processReferralOutbox(env, onlyUid=null) {
       });
       if (response.ok) {
         await env.DB.prepare("UPDATE referral_callback_outbox SET status='delivered',updated_at=CURRENT_TIMESTAMP,last_error=NULL WHERE id=? AND status='pending'").bind(item.id).run();
+        await creditReferralCommissions(env,item.referred_uid);
       } else {
         const delay=Math.min(21600,60*Math.pow(2,Math.min(Number(item.attempts)||0,8)));
         await env.DB.prepare("UPDATE referral_callback_outbox SET attempts=attempts+1,next_attempt_at=datetime('now','+'||?||' seconds'),last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(delay,"HTTP "+response.status,item.id).run();
@@ -178,6 +241,7 @@ async function openBox(env,uid,b){
   ];
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Gems or duplicate request"},409);
     try{await processReferralOutbox(env,uid);}catch(err){console.error('Referral outbox deferred');}
+    await creditReferralCommissions(env,uid);
     return json({success:true,island_number:n,box_number:box,price_gems:price});}
   catch(e){console.error(e);return json({success:false,error:"Box opening failed"},500);}
 }
@@ -449,6 +513,8 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
   if(u.pathname==="/api/auth/sync"&&req.method==="POST")return syncUser(req,env);
   let c;try{c=await auth(req);await ensureActive(env,c.sub);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   try{
+    if(u.pathname==="/api/referral/commission"&&req.method==="GET")return referralCommissionInfo(env,c.sub);
+    if(u.pathname==="/api/referral/commission/claim"&&req.method==="POST")return claimReferralCommission(env,c.sub,await body(req));
     if(u.pathname==="/api/game/state"&&req.method==="GET")return json(await gameState(env,c.sub));
     if(u.pathname==="/api/game/island/unlock"&&req.method==="POST")return unlock(env,c.sub,await body(req));
     if(u.pathname==="/api/game/box/open"&&req.method==="POST")return openBox(env,c.sub,await body(req));
