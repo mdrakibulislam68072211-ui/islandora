@@ -149,7 +149,8 @@ async function linkTelegramAccount(req,env,uid){
     return json({success:true,linked:true,telegram:{id:linked.telegram_user_id,username:linked.username},linked_at:linked.linked_at});
   }catch(e){console.error("Telegram account link failed",e);return json({success:false,error:"Unable to link Telegram account"},500);}
 }
-\nasync function syncUser(req,env){
+
+async function syncUser(req,env){
   let c;try{c=await auth(req);}catch(e){return json({success:false,error:"Unauthorized",message:e.message},401);}
   const uid=c.sub,email=c.email||"";if(!email)return json({success:false,error:"Email not available"},400);
   try{
