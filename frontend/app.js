@@ -961,6 +961,39 @@
     } catch (error) { showToast(error.message); button.disabled = false; }
   });
 
+  const exchangeInput = $("#exchangeCoins");
+  const exchangePreview = $("#exchangePreview");
+  const exchangeButton = $("#exchangeButton");
+
+  function updateExchangePreview() {
+    const amount = Math.floor(Number(exchangeInput.value) || 0);
+    const fee = amount > 0 ? Math.ceil(amount * 0.01) : 0;
+    const gems = Math.max(0, amount - fee);
+    exchangePreview.textContent = `Fee: ${fee.toLocaleString()} Coins · You receive: ${gems.toLocaleString()} Gems`;
+    exchangeButton.disabled = amount < 2 || !Number.isSafeInteger(amount);
+  }
+
+  exchangeInput.addEventListener("input", updateExchangePreview);
+  exchangeButton.addEventListener("click", async () => {
+    const amount = Math.floor(Number(exchangeInput.value) || 0);
+    if (amount < 2) return;
+    exchangeButton.disabled = true;
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/game/exchange", "POST", {
+        coins: amount, idempotency_key: makeIdempotencyKey()
+      });
+      await loadGameState(auth.currentUser);
+      exchangeInput.value = "";
+      updateExchangePreview();
+      showToast(`Converted ${result.coins_spent} Coins into ${result.gems_received} Gems.`);
+    } catch (error) {
+      showToast(error.message);
+    } finally {
+      updateExchangePreview();
+    }
+  });
+  updateExchangePreview();
+
   // ==========================================
   // BOTTOM NAVIGATION
   // ==========================================
@@ -985,10 +1018,10 @@
       } else if (target === "#profile") {
         openProfilePanel();
 
+      } else if (target === "#wallet") {
+        document.querySelector(target)?.scrollIntoView({ behavior: "smooth" });
       } else {
-        showToast(
-          item.textContent.trim() + " will be available soon."
-        );
+        showToast(item.textContent.trim() + " will be available soon.");
       }
     });
   });
