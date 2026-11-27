@@ -189,10 +189,7 @@
     const registrationStarted =
       sessionStorage.getItem(REGISTER_KEY) === "1";
 
-    if (!code || !registrationStarted || !user) return;
-
-    // Consume registration intent so an ordinary login cannot apply it.
-    sessionStorage.removeItem(REGISTER_KEY);
+    if (!code || !registrationStarted || !user) return true;
 
     const created = Date.parse(user.metadata?.creationTime || "");
     const signedIn = Date.parse(user.metadata?.lastSignInTime || "");
@@ -204,7 +201,8 @@
       !signedIn ||
       Math.abs(signedIn - created) > 120000
     ) {
-      return;
+      sessionStorage.removeItem(REGISTER_KEY);
+      return true;
     }
 
     try {
@@ -220,11 +218,13 @@
       });
 
       sessionStorage.removeItem(PENDING_KEY);
+      sessionStorage.removeItem(REGISTER_KEY);
       console.info("Islandora referral code applied.");
+      return true;
     } catch (error) {
       console.error("Referral application failed:", error);
-      // Keep the code only if the referral request could not be completed.
-      // It will not be automatically applied on an ordinary login.
+      sessionStorage.setItem(REGISTER_KEY, "1");
+      return false;
     }
   }
 
@@ -574,7 +574,11 @@
         return;
       }
 
-      await applyPendingReferral();
+      const referralReady = await applyPendingReferral();
+      window.__islandoraReferralStatus = { uid: user.uid, success: referralReady !== false };
+      window.dispatchEvent(new CustomEvent("islandora-referral-ready", {
+        detail: { uid: user.uid, success: referralReady !== false }
+      }));
       await loadReferralData();
     });
   }
