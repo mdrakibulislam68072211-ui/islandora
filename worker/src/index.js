@@ -379,15 +379,16 @@ async function openDirectAd(env,uid,b){
   }catch(e){console.error(e);return json({success:false,error:"Ad could not be opened"},500);}
 }
 async function spinState(env,uid){
-  const [settings,ad,attempt]=await Promise.all([
+  const [settings,ad,attempt,options]=await Promise.all([
     env.DB.prepare("SELECT enabled,daily_limit FROM spin_settings WHERE id=1").first(),
     env.DB.prepare("SELECT id,direct_link_url FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first(),
-    env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first()
+    env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first(),
+    env.DB.prepare("SELECT reward_coins,probability_bps FROM spin_reward_options WHERE enabled=1 ORDER BY sort_order").all()
   ]);
   const verificationReady=!!env.ADSTERRA_POSTBACK_SECRET&&!!ad?.direct_link_url;
   return json({success:true,enabled:Number(settings?.enabled||0)===1&&verificationReady,verification_ready:verificationReady,
     reason:!verificationReady?"Adsterra completion verification is not configured":null,
-    daily_limit:1,remaining_spins:attempt?0:1,attempt:attempt||null});
+    daily_limit:1,remaining_spins:attempt?0:1,attempt:attempt||null,reward_options:options.results||[]});
 }
 async function spinNow(env,uid,b){
   const key=b?.idempotency_key;
