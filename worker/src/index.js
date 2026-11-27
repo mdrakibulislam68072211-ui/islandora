@@ -184,6 +184,64 @@ async function claim(env,uid,b){
   try{const r=await env.DB.batch(stmts);if(!r[0]?.meta?.changes)return json({success:false,error:"Claim unavailable or duplicate request"},409);return json({success:true,claimed_coins:amount});}
   catch(e){console.error(e);return json({success:false,error:"Claim failed"},500);}
 }
+async function createWithdrawal(env,uid,b){
+  const amount=Number(b?.amount),method=String(b?.payment_method||"");
+  const details=String(b?.payment_details||"").trim(),key=b?.idempotency_key;
+  const methods=["USDT","bKash","Nagad","Rocket","Payeer"];
+  if(!Number.isSafeInteger(amount)||amount<10000||amount>1000000000||!methods.includes(method)||details.length<4||details.length>500||!idem(key))
+    return json({success:false,error:"Enter a valid amount, payment method and payment details"},400);
+  const valid=await env.DB.prepare("SELECT COUNT(*) AS total FROM referrals WHERE referrer_uid=? AND is_valid=1").bind(uid).first();
+  if(Number(valid?.total||0)<5)return json({success:false,error:"At least 5 valid referrals are required"},403);
+  const id=crypto.randomUUID();
+  const stmts=[
+    env.DB.prepare("UPDATE users SET coins=coins-? WHERE firebase_uid=? AND coins>=? AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)").bind(amount,uid,amount,key),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,?,'Coins',?,'withdrawal_request','Coins reserved for withdrawal',?,? WHERE changes()=1")
+      .bind(crypto.randomUUID(),uid,-amount,id,key),
+    env.DB.prepare("INSERT INTO withdrawal_requests(id,firebase_uid,amount,payment_method,payment_details,status) SELECT ?,?,?,?,?,'pending' WHERE EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='withdrawal_request')")
+      .bind(id,uid,amount,method,details,key,uid)
+  ];
+  try{
+    const r=await env.DB.batch(stmts);
+    if(!r[0]?.meta?.changes)return json({success:false,error:"Insufficient Coins or duplicate request"},409);
+    return json({success:true,withdrawal_id:id,status:"pending",reserved_coins:amount});
+  }catch(e){console.error(e);return json({success:false,error:"Withdrawal request failed"},500);}
+}
+async function listWithdrawals(env,uid){
+  const {results=[]}=await env.DB.prepare("SELECT id,amount,payment_method,status,admin_note,processed_at,created_at FROM withdrawal_requests WHERE firebase_uid=? ORDER BY created_at DESC LIMIT 50").bind(uid).all();
+  return json({success:true,withdrawals:results});
+}
+async function requireAdmin(env,uid){
+  return await env.DB.prepare("SELECT role FROM admin_users WHERE firebase_uid=? AND is_active=1").bind(uid).first();
+}
+async function adminWithdrawals(env,uid){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const {results=[]}=await env.DB.prepare("SELECT id,firebase_uid,amount,payment_method,payment_details,status,admin_note,created_at FROM withdrawal_requests ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END,created_at DESC LIMIT 200").all();
+  return json({success:true,withdrawals:results,admin_role:admin.role});
+}
+async function reviewWithdrawal(env,uid,b){
+  const admin=await requireAdmin(env,uid);
+  if(!admin)return json({success:false,error:"Admin access required"},403);
+  const id=String(b?.withdrawal_id||""),status=String(b?.status||""),note=String(b?.admin_note||"").trim().slice(0,500);
+  if(!id||id.length>64||!["approved","rejected"].includes(status))return json({success:false,error:"Invalid withdrawal review"},400);
+  const request=await env.DB.prepare("SELECT firebase_uid,amount,status FROM withdrawal_requests WHERE id=?").bind(id).first();
+  if(!request)return json({success:false,error:"Withdrawal not found"},404);
+  if(request.status!=="pending")return json({success:false,error:"Withdrawal has already been processed"},409);
+  const stmts=[
+    env.DB.prepare("UPDATE withdrawal_requests SET status=?,admin_note=?,processed_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(status,note,id),
+    env.DB.prepare("INSERT INTO wallet_transactions(id,firebase_uid,currency,amount,transaction_type,description,reference_id,idempotency_key) SELECT ?,firebase_uid,'Coins',amount,'withdrawal_refund','Refund for rejected withdrawal',id,? FROM withdrawal_requests WHERE id=? AND status='rejected' AND NOT EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=?)")
+      .bind(crypto.randomUUID(),"withdrawal_refund:"+id,id,"withdrawal_refund:"+id),
+    env.DB.prepare("UPDATE users SET coins=coins+(SELECT amount FROM withdrawal_requests WHERE id=?) WHERE firebase_uid=? AND EXISTS(SELECT 1 FROM wallet_transactions WHERE idempotency_key=? AND firebase_uid=? AND transaction_type='withdrawal_refund')")
+      .bind(id,request.firebase_uid,"withdrawal_refund:"+id,request.firebase_uid)
+  ];
+  try{
+    const r=await env.DB.batch(stmts);
+    if(!r[0]?.meta?.changes)return json({success:false,error:"Withdrawal was already processed"},409);
+    await env.DB.prepare("INSERT INTO admin_activity_logs(id,admin_uid,action,target_uid,details) VALUES(?,?,?,?,?)")
+      .bind(crypto.randomUUID(),"", "withdrawal_"+status,request.firebase_uid,JSON.stringify({withdrawal_id:id,amount:request.amount,note})).run();
+    return json({success:true,withdrawal_id:id,status,refunded:status==="rejected"});
+  }catch(e){console.error(e);return json({success:false,error:"Withdrawal review failed"},500);}
+}
 async function exchange(env,uid,b){
   const amount=Number(b?.coins),key=b?.idempotency_key;
   if(!Number.isSafeInteger(amount)||amount<1||amount>1000000000||!idem(key))return json({success:false,error:"Enter a valid whole Coin amount and idempotency key"},400);
@@ -214,6 +272,10 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/game/box/open"&&req.method==="POST")return openBox(env,c.sub,await body(req));
     if(u.pathname==="/api/game/claim"&&req.method==="POST")return claim(env,c.sub,await body(req));
     if(u.pathname==="/api/game/exchange"&&req.method==="POST")return exchange(env,c.sub,await body(req));
+    if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
+    if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
+    if(u.pathname==="/api/admin/withdrawals"&&req.method==="GET")return adminWithdrawals(env,c.sub);
+    if(u.pathname==="/api/admin/withdrawals/review"&&req.method==="POST")return reviewWithdrawal(env,c.sub,await body(req));
     return json({success:false,error:"Route not found"},404);
   }catch(e){console.error(e);return json({success:false,error:"Game request failed"},500);}
 }};
