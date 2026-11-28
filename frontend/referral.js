@@ -108,6 +108,32 @@
     return token;
   }
 
+  // Coarse, privacy-minimised device signal for cross-browser referral checks.
+  // Raw characteristics are hashed before transmission; no IP/canvas/audio data.
+  async function getDeviceFingerprintHash() {
+    const s = window.screen || {};
+    const n = navigator;
+    const parts = [
+      "v1",
+      String(n.platform || ""),
+      String(n.language || ""),
+      String(Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
+      String(s.width || 0) + "x" + String(s.height || 0),
+      String(s.availWidth || 0) + "x" + String(s.availHeight || 0),
+      String(s.colorDepth || 0),
+      String(n.hardwareConcurrency || 0),
+      String(n.deviceMemory || 0),
+      String(n.maxTouchPoints || 0)
+    ];
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(parts.join("|"))
+    );
+    return Array.from(new Uint8Array(digest))
+      .map(byte => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
   function getReferralFromURL() {
     const params = new URLSearchParams(location.search);
     const telegramStart = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "";
@@ -211,13 +237,16 @@
     try {
       await syncMainBackend();
 
+      const deviceFingerprintHash = await getDeviceFingerprintHash();
       await request(API + "/api/referral/device", "POST", {
-        device_token: getDeviceToken()
+        device_token: getDeviceToken(),
+        device_fingerprint_hash: deviceFingerprintHash
       });
 
       await request(API + "/api/referral/apply", "POST", {
         referral_code: code,
-        device_token: getDeviceToken()
+        device_token: getDeviceToken(),
+        device_fingerprint_hash: deviceFingerprintHash
       });
 
       sessionStorage.removeItem(PENDING_KEY);
@@ -470,7 +499,10 @@
       const device = await request(
         API + "/api/referral/device",
         "POST",
-        { device_token: getDeviceToken() }
+        {
+          device_token: getDeviceToken(),
+          device_fingerprint_hash: await getDeviceFingerprintHash()
+        }
       );
 
       referralCode =
