@@ -456,7 +456,7 @@ async function monetagRewardStatus(env,uid,ymid){
 }
 async function listAdPlacements(env,uid){
   const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
-  return json({success:true,ads:results.filter(ad=>ad.provider!=="Monetag"||!!env.MONETAG_POSTBACK_SECRET)});
+  return json({success:true,ads:results.filter(ad=>ad.provider!=="Monetag"||ad.ad_type!=="rewarded"||!!env.MONETAG_POSTBACK_SECRET)});
 }
 async function startMonetagInterstitial(env,uid){
   const ad=await env.DB.prepare("SELECT id,placement_id,settings_json,cooldown_hours,daily_limit FROM ad_settings WHERE provider='Monetag' AND ad_type='in_app_interstitial' AND enabled=1").first();
