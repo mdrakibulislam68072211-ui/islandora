@@ -1478,6 +1478,9 @@
       row.append(label,edit); list.appendChild(row);
     });
   }
+  $("#adminAdProvider").addEventListener("change", () => {
+    $("#adminAdType").value = $("#adminAdProvider").value === "Adsterra" ? "direct_link" : "rewarded";
+  });
   $("#adminSaveAd").addEventListener("click", async () => {
     const provider = $("#adminAdProvider").value;
     const type = $("#adminAdType").value;
