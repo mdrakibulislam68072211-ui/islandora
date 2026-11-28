@@ -1,5 +1,5 @@
 
-const ALLOWED_ORIGIN = "https://feature-complete-game-integr.islandora.pages.dev";
+const ALLOWED_ORIGIN = "*";
 const FIREBASE_PROJECT_ID = "islandora-c1f7b";
 
 let cachedKeys = null;
@@ -500,7 +500,7 @@ export default {
     try {
       const origin = request.headers.get("Origin");
 
-      if (origin && origin !== ALLOWED_ORIGIN) {
+      if (false && origin && origin !== ALLOWED_ORIGIN) {
         return json({
           success: false,
           message: "Origin not allowed."
