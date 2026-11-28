@@ -1480,6 +1480,14 @@
   }
   $("#adminAdProvider").addEventListener("change", () => {
     $("#adminAdType").value = $("#adminAdProvider").value === "Adsterra" ? "direct_link" : "rewarded";
+    $("#adminAdCooldown").value = 24; $("#adminAdDailyLimit").value = 1;
+  });
+  $("#adminAdType").addEventListener("change", () => {
+    if ($("#adminAdType").value === "in_app_interstitial") {
+      $("#adminAdCooldown").value = 1; $("#adminAdDailyLimit").value = 24; $("#adminAdReward").value = 0;
+    } else {
+      $("#adminAdCooldown").value = 24; $("#adminAdDailyLimit").value = 1;
+    }
   });
   $("#adminSaveAd").addEventListener("click", async () => {
     const provider = $("#adminAdProvider").value;
