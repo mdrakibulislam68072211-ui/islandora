@@ -1147,6 +1147,7 @@
   let spinRewardOptions = [];
   let spinRotation = 0;
   let monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
+  let monetagInterstitial = null, interstitialTimer = null;
   let monetagSdkPromise = null;
   async function loadMonetagSdk() {
     if (monetagSdkPromise) return monetagSdkPromise;
@@ -1165,17 +1166,34 @@
     });
     return monetagSdkPromise;
   }
+  async function runHourlyMonetagInterstitial() {
+    if (!monetagInterstitial || !auth.currentUser) return;
+    try {
+      const result = await apiRequest(auth.currentUser, "/api/ads/monetag/interstitial", "POST", {});
+      monetagZone = result.placement_id; monetagSdkUrl = JSON.parse(monetagInterstitial.settings_json || "{}").sdk_script_url || result.sdk_script_url;
+      monetagSdkUrl = result.sdk_script_url || monetagSdkUrl;
+      monetagSdkPromise = null;
+      await loadMonetagSdk();
+      const show = window["show_" + monetagZone];
+      if (typeof show === "function") await show({ requestVar: "islandora_hourly_interstitial" });
+    } catch (error) { console.warn("Monetag hourly interstitial:", error.message); }
+    if (monetagInterstitial) interstitialTimer = setTimeout(runHourlyMonetagInterstitial, 60 * 60 * 1000);
+  }
   async function loadAdPlacements(user) {
     try {
       const data = await apiRequest(user, "/api/ads/placements");
       const rewarded = data.ads?.find(item => item.provider === "Monetag" && item.ad_type === "rewarded");
+      monetagInterstitial = data.ads?.find(item => item.provider === "Monetag" && item.ad_type === "in_app_interstitial") || null;
+      if (interstitialTimer) clearTimeout(interstitialTimer);
+      if (monetagInterstitial) interstitialTimer = setTimeout(runHourlyMonetagInterstitial, 60 * 60 * 1000);
       monetagSettingId = rewarded?.id || null;
       monetagZone = rewarded?.placement_id || null;
       try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
       $("#monetagCard").hidden = !(monetagSettingId && monetagZone && monetagSdkUrl);
       const spinAd = $("#spinAdButton"); if (spinAd) spinAd.hidden = !monetagSettingId;
     } catch (error) {
-      monetagSettingId = null; monetagZone = null; monetagSdkUrl = null;
+      monetagSettingId = null; monetagZone = null; monetagSdkUrl = null; monetagInterstitial = null;
+      if (interstitialTimer) clearTimeout(interstitialTimer);
       $("#monetagCard").hidden = true;
       const spinAd = $("#spinAdButton"); if (spinAd) spinAd.hidden = true;
     }
@@ -1439,13 +1457,29 @@
     if (!data.ads.length) { list.textContent = "No ad placements configured."; return; }
     data.ads.forEach(ad => {
       const row = document.createElement("div"); row.className = "withdrawal-history-row";
-      row.textContent = `${ad.provider} · ${ad.ad_type} · ${ad.name} · ${ad.enabled ? "ENABLED" : "DISABLED"} · cooldown ${ad.cooldown_hours}h · daily ${ad.daily_limit}`;
-      list.appendChild(row);
+      const label = document.createElement("span");
+      label.textContent = `${ad.provider} · ${ad.ad_type} · ${ad.name} · ${ad.enabled ? "ENABLED" : "DISABLED"} · cooldown ${ad.cooldown_hours}h · daily ${ad.daily_limit}`;
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "open-button"; edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        $("#adminAdProvider").value = ad.provider;
+        $("#adminAdType").value = ad.ad_type;
+        $("#adminAdName").value = ad.name || "";
+        $("#adminAdUrl").value = ad.direct_link_url || "";
+        $("#adminAdPlacement").value = ad.placement_id || "";
+        let cfg={};try{cfg=JSON.parse(ad.settings_json||"{}");}catch{}
+        $("#adminAdSdkUrl").value = cfg.sdk_script_url || "";
+        $("#adminAdCooldown").value = ad.cooldown_hours;
+        $("#adminAdDailyLimit").value = ad.daily_limit;
+        $("#adminAdReward").value = ad.reward_coins;
+        $("#adminAdEnabled").checked = Number(ad.enabled) === 1;
+        $("#adminAdMessage").textContent = "Editing " + ad.name;
+      });
+      row.append(label,edit); list.appendChild(row);
     });
   }
   $("#adminSaveAd").addEventListener("click", async () => {
     const provider = $("#adminAdProvider").value;
-    const type = provider === "Adsterra" ? "direct_link" : "rewarded";
+    const type = $("#adminAdType").value;
     try {
       await apiRequest(auth.currentUser, "/api/admin/ads", "POST", {
         provider, ad_type: type, name: $("#adminAdName").value.trim(),
