@@ -7,7 +7,7 @@ const PROJECT = "islandora-c1f7b";
 const JWKS_URL = "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 const CORS = {
   // Only the dedicated integration preview may call this staging API.
-  "Access-Control-Allow-Origin": "https://feature-complete-game-integr.islandora.pages.dev",
+  "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Vary": "Origin",
