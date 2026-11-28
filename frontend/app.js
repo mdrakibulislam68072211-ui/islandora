@@ -1172,10 +1172,12 @@
       monetagSettingId = rewarded?.id || null;
       monetagZone = rewarded?.placement_id || null;
       try { monetagSdkUrl = JSON.parse(rewarded?.settings_json || "{}").sdk_script_url || null; } catch { monetagSdkUrl = null; }
-      $("#monetagCard").hidden = !(telegram?.initData && monetagSettingId && monetagZone && monetagSdkUrl);
+      $("#monetagCard").hidden = !(monetagSettingId && monetagZone && monetagSdkUrl);
+      const spinAd = $("#spinAdButton"); if (spinAd) spinAd.hidden = !monetagSettingId;
     } catch (error) {
       monetagSettingId = null; monetagZone = null; monetagSdkUrl = null;
       $("#monetagCard").hidden = true;
+      const spinAd = $("#spinAdButton"); if (spinAd) spinAd.hidden = true;
     }
   }
   $("#monetagButton").addEventListener("click", async () => {
@@ -1252,6 +1254,9 @@
     try {
       const data = await apiRequest(user, "/api/spin/state");
       spinRewardOptions = data.reward_options || [];
+      monetagSettingId = data.monetag_setting_id || monetagSettingId;
+      monetagZone = data.placement_id || monetagZone;
+      monetagSdkUrl = data.sdk_script_url || monetagSdkUrl;
       renderSpinWheel(spinRewardOptions);
       const attempt = data.attempt;
       spinAttemptId = attempt?.id || null;
@@ -1260,22 +1265,22 @@
       const claimButton = $("#spinClaimButton");
       spinButton.disabled = !data.enabled || !!attempt;
       spinButton.textContent = attempt ? "Already Spun Today" : "Spin Now";
-      adButton.hidden = !(attempt && attempt.status === "locked" && !attempt.ad_opened_at && data.verification_ready);
-      $("#spinCheckButton").hidden = !(attempt && attempt.status === "locked" && !!attempt.ad_opened_at);
+      adButton.hidden = !(attempt && attempt.status === "locked" && data.verification_ready);
+      $("#spinCheckButton").hidden = !(attempt && attempt.status === "locked");
       claimButton.hidden = !(attempt && attempt.status === "verified");
       if (!attempt) {
         $("#spinRewardValue").textContent = "—";
         $("#spinMessage").textContent = data.enabled
-          ? "One spin is available today. Rewards remain locked until Adsterra verifies the completed ad."
+          ? "One spin is available today. The reward unlocks only after Monetag verifies a valued rewarded impression."
           : (data.reason || "Daily Spin is currently unavailable.");
       } else {
         $("#spinRewardValue").textContent = Number(attempt.reward_coins).toLocaleString() + " Coins";
         if (attempt.status === "locked" && !attempt.ad_opened_at) {
-          $("#spinMessage").textContent = "LOCKED REWARD — Watch the Adsterra ad. Opening it alone will not unlock Coins.";
+          $("#spinMessage").textContent = "LOCKED REWARD — Watch the Monetag rewarded ad to verify your reward.";
         } else if (attempt.status === "locked") {
-          $("#spinMessage").textContent = "LOCKED REWARD — Waiting for Adsterra's approved server verification.";
+          $("#spinMessage").textContent = "LOCKED REWARD — Waiting for Monetag server verification.";
         } else if (attempt.status === "verified") {
-          $("#spinMessage").textContent = "AD VERIFIED — Claim your " + Number(attempt.reward_coins).toLocaleString() + " Coins.";
+          $("#spinMessage").textContent = "MONETAG VERIFIED — Claim your " + Number(attempt.reward_coins).toLocaleString() + " Coins.";
         } else {
           $("#spinMessage").textContent = "REWARD CLAIMED — Your next spin is available tomorrow.";
         }
@@ -1313,24 +1318,22 @@
   });
 
   $("#spinAdButton").addEventListener("click", async () => {
-    if (!spinAttemptId) return;
-    const popup = window.open("about:blank", "_blank");
-    if (!popup) {
-      $("#spinMessage").textContent = "Allow pop-ups to open the optional ad. The reward will remain locked until server verification.";
-      return;
-    }
+    if (!spinAttemptId || !monetagZone || !monetagSdkUrl) return;
     const button = $("#spinAdButton");
     button.disabled = true;
     try {
-      const result = await apiRequest(auth.currentUser, "/api/spin/ad-open", "POST", {
-        spin_id: spinAttemptId
-      });
-      popup.location.href = result.url;
-      $("#spinMessage").textContent = "Ad opened. Your reward remains locked until Adsterra sends an approved completion verification.";
+      const event = await apiRequest(auth.currentUser, "/api/spin/ad-start", "POST", { spin_id: spinAttemptId });
+      monetagZone = event.placement_id;
+      monetagSdkUrl = event.sdk_script_url;
+      await loadMonetagSdk();
+      const show = window["show_" + monetagZone];
+      if (typeof show !== "function") throw new Error("Monetag rewarded ad is unavailable.");
+      await show({ ymid: event.ymid, requestVar: "islandora_daily_spin" });
+      $("#spinMessage").textContent = "Ad session finished. Waiting for Monetag's server-side valued confirmation.";
       await loadSpinState(auth.currentUser);
     } catch (error) {
-      popup.close();
-      $("#spinMessage").textContent = error.message;
+      $("#spinMessage").textContent = error.message || "Monetag ad could not be started.";
+    } finally {
       button.disabled = false;
     }
   });
