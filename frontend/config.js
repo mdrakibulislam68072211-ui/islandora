@@ -3,10 +3,10 @@ window.APP_CONFIG = {
   APP_NAME: "Islandora",
 
   API_BASE_URL:
-    "https://islandora-api.mdrakibulislam68072211.workers.dev",
+    "https://islandora-staging-api.mdrakibulislam68072211.workers.dev",
 
   REFERRAL_API_URL:
-    "https://islandora-referral-api.mdrakibulislam68072211.workers.dev",
+    "https://islandora-staging-referral-api.mdrakibulislam68072211.workers.dev",
 
   FIREBASE: {
     apiKey: "AIzaSyByOdbroiBMxmYcKwEQohbdoM2jhTNyRLE",
@@ -19,13 +19,13 @@ window.APP_CONFIG = {
   },
 
   TELEGRAM: {
-    BOT_USERNAME: "YOUR_BOT_USERNAME"
+    BOT_USERNAME: "Islandora_Bot"
   },
 
   SETTINGS: {
     DEFAULT_LANGUAGE: "en",
     CURRENCY_NAME: "Coins",
     GEM_NAME: "Gems",
-    PREVIEW_MODE: true
+    PREVIEW_MODE: false
   }
 };

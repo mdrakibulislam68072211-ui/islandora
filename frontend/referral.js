@@ -18,6 +18,9 @@
   let user = null;
   let referralCode = "";
   let validCount = 0;
+  let commissionBalance = 0;
+  let commissionEarned = 0;
+  let commissionClaimable = 0;
   let language = localStorage.getItem(LANG_KEY) || "en";
   let referralView = null;
   let loading = false;
@@ -31,6 +34,11 @@
       copy: "Copy",
       copied: "Copied!",
       valid: "Valid Referrals",
+      commission: "Referral Commission Balance",
+      earned: "Total Earned",
+      claim: "Claim Coins",
+      claimMinimum: "Minimum claim: 5 Coins",
+      claimSuccess: "Referral commission claimed successfully.",
       noticeTitle: "Important Notice",
       notice: "Creating an account alone does not count as a valid referral. A referred user will only count after opening at least one mining box.",
       same: "Accounts using the same device will not count as valid referrals and will not generate referral rewards.",
@@ -47,6 +55,11 @@
       copy: "কপি",
       copied: "কপি হয়েছে!",
       valid: "বৈধ রেফারেলের সংখ্যা",
+      commission: "রেফারেল কমিশন ব্যালেন্স",
+      earned: "মোট আয়",
+      claim: "কয়েন ক্লেইম করুন",
+      claimMinimum: "সর্বনিম্ন ক্লেইম: ৫ Coins",
+      claimSuccess: "রেফারেল কমিশন সফলভাবে ক্লেইম হয়েছে।",
       noticeTitle: "গুরুত্বপূর্ণ বিজ্ঞপ্তি",
       notice: "শুধু অ্যাকাউন্ট তৈরি করলেই বৈধ রেফারেল হিসেবে গণনা হবে না। আমন্ত্রিত ব্যবহারকারী অন্তত একটি মাইনিং বক্স খুললেই কেবল তাকে বৈধ রেফারেল হিসেবে গণনা করা হবে।",
       same: "একই ডিভাইস ব্যবহার করে তৈরি অ্যাকাউন্ট বৈধ রেফারেল হিসেবে গণনা হবে না এবং কোনো রেফারেল পুরস্কারও তৈরি করবে না।",
@@ -63,6 +76,11 @@
       copy: "कॉपी करें",
       copied: "कॉपी हो गया!",
       valid: "मान्य रेफरल",
+      commission: "रेफरल कमीशन बैलेंस",
+      earned: "कुल कमाई",
+      claim: "Coins क्लेम करें",
+      claimMinimum: "न्यूनतम क्लेम: 5 Coins",
+      claimSuccess: "रेफरल कमीशन सफलतापूर्वक क्लेम हुआ।",
       noticeTitle: "महत्वपूर्ण सूचना",
       notice: "केवल अकाउंट बनाने से कोई रेफरल मान्य नहीं होगा। आमंत्रित उपयोगकर्ता कम से कम एक माइनिंग बॉक्स खोलने के बाद ही मान्य रेफरल माना जाएगा।",
       same: "एक ही डिवाइस से बनाए गए अकाउंट मान्य रेफरल नहीं माने जाएंगे और उनसे कोई रेफरल पुरस्कार नहीं मिलेगा।",
@@ -90,9 +108,37 @@
     return token;
   }
 
+  // Coarse, privacy-minimised device signal for cross-browser referral checks.
+  // Raw characteristics are hashed before transmission; no IP/canvas/audio data.
+  async function getDeviceFingerprintHash() {
+    const s = window.screen || {};
+    const n = navigator;
+    const parts = [
+      "v1",
+      String(n.platform || ""),
+      String(n.language || ""),
+      String(Intl.DateTimeFormat().resolvedOptions().timeZone || ""),
+      String(s.width || 0) + "x" + String(s.height || 0),
+      String(s.availWidth || 0) + "x" + String(s.availHeight || 0),
+      String(s.colorDepth || 0),
+      String(n.hardwareConcurrency || 0),
+      String(n.deviceMemory || 0),
+      String(n.maxTouchPoints || 0)
+    ];
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(parts.join("|"))
+    );
+    return Array.from(new Uint8Array(digest))
+      .map(byte => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
   function getReferralFromURL() {
     const params = new URLSearchParams(location.search);
-    const code = (params.get("ref") || "").trim().toLowerCase();
+    const telegramStart = window.Telegram?.WebApp?.initDataUnsafe?.start_param || "";
+    const startCode = telegramStart.match(/^ref_([a-f0-9]{16})$/i)?.[1] || "";
+    const code = (params.get("ref") || startCode || "").trim().toLowerCase();
 
     if (/^[a-f0-9]{16}$/.test(code)) {
       sessionStorage.setItem(PENDING_KEY, code);
@@ -129,6 +175,23 @@
     return data;
   }
 
+  async function requestMain(path, method = "GET", body = null) {
+    const token = await getToken();
+    const response = await fetch(MAIN_API + path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + token
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.success === false) {
+      throw new Error(data.message || data.error || "Request failed");
+    }
+    return data;
+  }
+
   async function syncMainBackend() {
     const token = await getToken();
 
@@ -154,10 +217,7 @@
     const registrationStarted =
       sessionStorage.getItem(REGISTER_KEY) === "1";
 
-    if (!code || !registrationStarted || !user) return;
-
-    // Consume registration intent so an ordinary login cannot apply it.
-    sessionStorage.removeItem(REGISTER_KEY);
+    if (!code || !registrationStarted || !user) return true;
 
     const created = Date.parse(user.metadata?.creationTime || "");
     const signedIn = Date.parse(user.metadata?.lastSignInTime || "");
@@ -169,27 +229,46 @@
       !signedIn ||
       Math.abs(signedIn - created) > 120000
     ) {
-      return;
+      sessionStorage.removeItem(REGISTER_KEY);
+      sessionStorage.removeItem(PENDING_KEY);
+      return true;
     }
 
     try {
       await syncMainBackend();
 
+      const deviceFingerprintHash = await getDeviceFingerprintHash();
       await request(API + "/api/referral/device", "POST", {
-        device_token: getDeviceToken()
+        device_token: getDeviceToken(),
+        device_fingerprint_hash: deviceFingerprintHash
       });
 
       await request(API + "/api/referral/apply", "POST", {
         referral_code: code,
-        device_token: getDeviceToken()
+        device_token: getDeviceToken(),
+        device_fingerprint_hash: deviceFingerprintHash
       });
 
       sessionStorage.removeItem(PENDING_KEY);
+      sessionStorage.removeItem(REGISTER_KEY);
       console.info("Islandora referral code applied.");
+      return true;
     } catch (error) {
       console.error("Referral application failed:", error);
-      // Keep the code only if the referral request could not be completed.
-      // It will not be automatically applied on an ordinary login.
+      const permanent = [
+        "Invalid referral code.",
+        "Referral code not found.",
+        "You cannot use your own referral code.",
+        "A referral has already been applied to this account."
+      ].includes(error.message);
+      if (permanent) {
+        sessionStorage.removeItem(PENDING_KEY);
+        sessionStorage.removeItem(REGISTER_KEY);
+        window.__islandoraReferralWarning = error.message;
+        return true;
+      }
+      sessionStorage.setItem(REGISTER_KEY, "1");
+      return false;
     }
   }
 
@@ -313,7 +392,7 @@
     const view = createView();
 
     const link = referralCode
-      ? location.origin + location.pathname + "?ref=" + referralCode
+      ? "https://t.me/Islandora_Bot?start=ref_" + referralCode
       : "";
 
     view.innerHTML = `
@@ -354,6 +433,13 @@
                 <span class="ir-label">${t("valid")}</span>
                 <div class="ir-count">${validCount}</div>
               </div>
+              <div class="ir-card">
+                <span class="ir-label">${t("commission")}</span>
+                <div class="ir-count">${commissionBalance.toFixed(3)} Coins</div>
+                <p class="ir-subtitle">${t("earned")}: ${commissionEarned.toFixed(3)} Coins</p>
+                <p class="ir-subtitle">${t("claimMinimum")}</p>
+                <button class="ir-button" id="irClaimCommission" ${commissionClaimable < 5 ? "disabled" : ""}>${t("claim")} (${commissionClaimable.toLocaleString()} Coins)</button>
+              </div>
             `
         }
 
@@ -378,6 +464,20 @@
     });
 
     if (user) {
+      const claimButton = view.querySelector("#irClaimCommission");
+      claimButton?.addEventListener("click", async () => {
+        claimButton.disabled = true;
+        try {
+          const result = await requestMain("/api/referral/commission/claim", "POST", {
+            idempotency_key: crypto.randomUUID().replace(/-/g, "")
+          });
+          commissionBalance = Number(result.remaining_coins || 0);
+          await loadReferralData();
+          render(t("claimSuccess"));
+        } catch (error) {
+          render(error.message);
+        }
+      });
       view.querySelector("#irCopyCode").addEventListener("click", () => {
         copyText(referralCode);
       });
@@ -399,7 +499,10 @@
       const device = await request(
         API + "/api/referral/device",
         "POST",
-        { device_token: getDeviceToken() }
+        {
+          device_token: getDeviceToken(),
+          device_fingerprint_hash: await getDeviceFingerprintHash()
+        }
       );
 
       referralCode =
@@ -423,6 +526,10 @@
         result.data?.valid_referrals ??
         0
       );
+      const commission = await requestMain("/api/referral/commission");
+      commissionBalance = Number(commission.balance_coins || 0);
+      commissionEarned = Number(commission.earned_coins || 0);
+      commissionClaimable = Number(commission.claimable_coins || 0);
 
       render();
     } catch (error) {
@@ -514,7 +621,11 @@
         return;
       }
 
-      await applyPendingReferral();
+      const referralReady = await applyPendingReferral();
+      window.__islandoraReferralStatus = { uid: user.uid, success: referralReady !== false };
+      window.dispatchEvent(new CustomEvent("islandora-referral-ready", {
+        detail: { uid: user.uid, success: referralReady !== false }
+      }));
       await loadReferralData();
     });
   }

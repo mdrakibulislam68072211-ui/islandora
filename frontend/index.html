@@ -306,6 +306,13 @@
 </head>
 
 <body>
+  <div id="accountLoading" class="account-loading" hidden>
+    <div class="account-loading-card">
+      <span class="account-loading-gem">💎</span>
+      <strong>Preparing your Islandora account</strong>
+      <small>Securing your referral and wallet setup...</small>
+    </div>
+  </div>
 
   <!-- AUTHENTICATION SCREEN -->
 
@@ -545,6 +552,8 @@
 
         <section class="mining-section" id="mining">
 
+          <div class="box-grid" id="boxGrid"></div>
+
           <div class="section-heading">
 
             <div>
@@ -558,7 +567,16 @@
 
           </div>
 
-          <div class="box-grid" id="boxGrid"></div>
+          <div class="live-mining-status" id="liveMiningStatus"><span class="live-mining-dot" id="liveMiningDot"></span><strong>MINING STATUS</strong><span id="liveMiningAmount" class="live-mining-amount">0.00 Coins</span><span id="liveMiningMessage">Checking mining activity…</span></div>
+          <div class="mining-projection-grid" aria-live="polite">
+            <div class="mining-projection-card"><span>DAILY MINING</span><strong id="dailyMiningProjection">0 Coins/day</strong></div>
+            <div class="mining-projection-card"><span>MONTHLY PROJECTION</span><strong id="monthlyMiningProjection">0 Coins/30 days</strong></div>
+          </div>
+          <p class="mining-projection-note">Estimated from all opened boxes across your islands. Actual pending and claimed Coins are shown separately.</p>
+
+
+
+
 
           <div class="storage-panel" id="storagePanel">
 
@@ -594,7 +612,7 @@
                 STORAGE FULL — Additional mining rewards will be lost.
               </div>
 
-              <small>Storage capacity: 1,500 Coins</small>
+              <small id="storageCapacityLabel">Storage capacity: 1,500 Coins</small>
 
             </div>
 
@@ -611,6 +629,148 @@
 
         </section>
 
+        <section class="wallet-section spin-section" id="spin" hidden>
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">DAILY REWARD</span>
+              <h2>🎡 Daily Spin</h2>
+            </div>
+          </div>
+          <div class="wallet-exchange-card spin-card">
+            <p>One spin each Bangladesh day. Your reward stays locked until Adsterra confirms a completed ad through an approved server callback. Opening or clicking the link alone never unlocks Coins.</p>
+            <div class="spin-wheel-wrap">
+              <span class="spin-wheel-pointer" aria-hidden="true">▼</span>
+              <div class="spin-wheel" id="spinWheel" role="img" aria-label="Daily reward wheel">
+                <div class="spin-wheel-labels" id="spinWheelLabels"></div>
+                <span class="spin-wheel-center">SPIN</span>
+              </div>
+            </div>
+            <div class="spin-reward-value" id="spinRewardValue">—</div>
+            <div class="spin-status" id="spinMessage" aria-live="polite">Checking daily spin status...</div>
+            <div class="spin-actions">
+              <button class="open-button" id="spinButton" type="button" disabled>Spin Now</button>
+              <button class="open-button" id="spinAdButton" type="button" hidden>Watch Ad to Unlock</button>
+            <button class="open-button" id="spinCheckButton" type="button" hidden>Check Verification</button>
+              <button class="claim-button" id="spinClaimButton" type="button" hidden>Claim Verified Coins</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="wallet-section" id="wallet" hidden>
+          <div class="section-heading">
+            <div>
+              <span class="section-kicker">WALLET</span>
+              <h2>💎 Convert Coins to Gems</h2>
+            </div>
+          </div>
+          <div class="wallet-exchange-card">
+            <p>Exchange rate: 1 Coin = 1 Gem before a 1% fee.</p>
+            <label for="exchangeCoins">Coins to exchange</label>
+            <input id="exchangeCoins" type="number" min="2" step="1" inputmode="numeric" placeholder="Enter whole Coins">
+            <div class="exchange-preview" id="exchangePreview">You will receive: 0 Gems</div>
+            <button class="open-button" id="exchangeButton" type="button">Convert to Gems</button>
+            <small id="exchangeMessage">Gems cannot be converted back to Coins.</small>
+          </div>
+
+          <div class="wallet-exchange-card" id="monetagCard" hidden>
+            <h3>🎁 Watch a Rewarded Ad</h3>
+            <p>Coins are credited only after Monetag confirms a valued impression on the server. Closing early or an unverified ad earns no reward.</p>
+            <button class="open-button" id="monetagButton" type="button">Watch Ad for Coins</button>
+            <small id="monetagMessage"></small>
+          </div>
+          <div class="wallet-exchange-card withdrawal-card">
+            <h3>🏦 Request Withdrawal</h3>
+            <p>Minimum 10,000 Coins and at least 5 valid referrals. Requests are reviewed manually.</p>
+            <label for="withdrawalAmount">Amount (Coins)</label>
+            <input id="withdrawalAmount" type="number" min="10000" step="1" inputmode="numeric" placeholder="Minimum 10,000">
+            <label for="withdrawalMethod">Payment method</label>
+            <select id="withdrawalMethod">
+              <option value="USDT">USDT</option>
+              <option value="bKash">bKash</option>
+              <option value="Nagad">Nagad</option>
+              <option value="Rocket">Rocket</option>
+              <option value="Payeer">Payeer</option>
+            </select>
+            <label for="withdrawalDetails">Wallet / account details</label>
+            <input id="withdrawalDetails" type="text" maxlength="500" placeholder="Enter your payment account details">
+            <button class="open-button" id="withdrawalButton" type="button">Submit Withdrawal Request</button>
+            <div id="withdrawalMessage" class="exchange-preview" aria-live="polite"></div>
+            <div id="withdrawalHistory" class="withdrawal-history"></div>
+          </div>
+        </section>
+
+        <section class="wallet-section admin-section" id="adminPanel" hidden>
+          <div class="section-heading"><div><span class="section-kicker">CONTROL CENTER</span><h2>⚙ Admin Panel</h2></div></div>
+          <div class="wallet-exchange-card">
+            <h3>Overview</h3>
+            <div id="adminOverview" class="admin-overview">Loading...</div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Signup Bonus</h3>
+            <p>Set the Gems granted once to newly registered accounts. Existing accounts will not be changed.</p>
+            <label for="adminSignupBonus">Signup bonus (Gems)</label>
+            <input id="adminSignupBonus" type="number" min="0" max="1000000000" step="1">
+            <button class="open-button" id="adminSaveSignupBonus" type="button">Save Signup Bonus</button>
+            <small id="adminSignupBonusMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Island Configuration</h3>
+            <label for="adminIslandNumber">Island</label>
+            <select id="adminIslandNumber"><option value="1">Island 1</option><option value="2">Island 2</option><option value="3">Island 3</option><option value="4">Island 4</option><option value="5">Island 5</option><option value="6">Island 6</option><option value="7">Island 7</option><option value="8">Island 8</option><option value="9">Island 9</option><option value="10">Island 10</option></select>
+            <label for="adminUnlockCost">Unlock cost (Gems)</label><input id="adminUnlockCost" type="number" min="0">
+            <label for="adminBoxPrices">10 box prices (comma separated)</label><input id="adminBoxPrices" type="text">
+            <label for="adminBoxRates">10 mining rates (comma separated)</label><input id="adminBoxRates" type="text">
+            <label for="adminStorageCap">Storage cap (0 = unlimited)</label><input id="adminStorageCap" type="number" min="0">
+            <button class="open-button" id="adminSaveIsland" type="button">Save Island Settings</button>
+            <small id="adminIslandMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>User Lookup</h3>
+            <input id="adminUserSearch" type="search" placeholder="Search email or user ID">
+            <button class="open-button" id="adminSearchButton" type="button">Search Users</button>
+            <div id="adminUsersList" class="withdrawal-history"></div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Adjust User Balance</h3>
+            <label for="adminTargetUid">Firebase User ID</label><input id="adminTargetUid" type="text">
+            <label for="adminCurrency">Currency</label><select id="adminCurrency"><option>Gems</option><option>Coins</option></select>
+            <label for="adminAdjustment">Amount (+ to grant, - to deduct)</label><input id="adminAdjustment" type="number" step="1">
+            <label for="adminAdjustmentNote">Reason</label><input id="adminAdjustmentNote" type="text" maxlength="180">
+            <button class="open-button" id="adminAdjustButton" type="button">Apply Balance Adjustment</button>
+            <small id="adminAdjustMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>Withdrawal Review</h3>
+            <button class="open-button" id="adminRefreshWithdrawals" type="button">Refresh Requests</button>
+            <div id="adminWithdrawalList" class="withdrawal-history"></div>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>🎡 Daily Spin Settings</h3>
+            <p>Enter reward and probability pairs as Coins:Percent, separated by commas. Total probability must equal 100. Daily limit stays at one spin.</p>
+            <small>Spin remains unavailable until Adsterra provides a verifiable per-user completion callback. A link click or open is never accepted as proof.</small>
+            <label for="adminSpinRewards">Rewards and probabilities</label>
+            <textarea id="adminSpinRewards" rows="5">20:35,30:25,50:15,75:10,100:7,150:4,200:2,300:1.5,500:0.5</textarea>
+            <label><input id="adminSpinEnabled" type="checkbox" checked> Enable daily spin</label>
+            <button class="open-button" id="adminSaveSpin" type="button">Save Spin Settings</button>
+            <small id="adminSpinMessage"></small>
+          </div>
+          <div class="wallet-exchange-card">
+            <h3>📢 Ad Settings</h3>
+            <label for="adminAdProvider">Provider</label>
+            <select id="adminAdProvider"><option>Adsterra</option><option>Monetag</option></select>
+            <label for="adminAdName">Ad name</label><input id="adminAdName" type="text" maxlength="100">
+            <label for="adminAdUrl">Adsterra direct link (HTTPS)</label><input id="adminAdUrl" type="url" placeholder="https://...">
+            <label for="adminAdPlacement">Monetag main zone ID</label><input id="adminAdPlacement" type="text" inputmode="numeric">
+            <label for="adminAdSdkUrl">Monetag SDK script URL (from publisher dashboard)</label><input id="adminAdSdkUrl" type="url" placeholder="https://.../sdk.js">
+            <label for="adminAdCooldown">Cooldown hours</label><input id="adminAdCooldown" type="number" min="0" max="720" value="24">
+            <label for="adminAdDailyLimit">Daily limit</label><input id="adminAdDailyLimit" type="number" min="0" max="1000" value="1">
+            <label for="adminAdReward">Reward Coins (Monetag only)</label><input id="adminAdReward" type="number" min="0" value="0">
+            <label><input id="adminAdEnabled" type="checkbox"> Enable this ad placement</label>
+            <button class="open-button" id="adminSaveAd" type="button">Save Ad Settings</button>
+            <small id="adminAdMessage"></small>
+            <div id="adminAdsList" class="withdrawal-history"></div>
+          </div>
+        </section>
       </section>
 
     </main>
@@ -626,6 +786,10 @@
         <span>⚒</span>
         <small>Mining</small>
       </a>
+      <a class="nav-item" href="#wallet">
+        <span>💎</span>
+        <small>Wallet</small>
+      </a>
 
       <a class="nav-item" href="#spin">
         <span>◉</span>
@@ -637,6 +801,9 @@
         <small>Referral</small>
       </a>
 
+      <a class="nav-item" href="#adminPanel" id="adminNavItem" hidden>
+        <span>⚙</span><small>Admin</small>
+      </a>
       <a class="nav-item" href="#profile">
         <span>♙</span>
         <small>Profile</small>
