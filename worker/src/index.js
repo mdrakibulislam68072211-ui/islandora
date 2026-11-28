@@ -416,7 +416,7 @@ async function monetagPostback(req,env){
   const price=String(u.searchParams.get("estimated_price")||"");
   if(!/^[0-9a-f-]{36}$/i.test(ymid)||!["impression","click"].includes(eventType)||!["valued","non_valued"].includes(rewardType))
     return json({success:false,error:"Invalid postback fields"},400);
-  const event=await env.DB.prepare("SELECT firebase_uid,reward_coins,status FROM monetag_reward_events WHERE ymid=?").bind(ymid).first();
+  const event=await env.DB.prepare("SELECT firebase_uid,reward_coins,status,purpose,spin_attempt_id FROM monetag_reward_events WHERE ymid=?").bind(ymid).first();
   if(!event)return json({success:false,error:"Unknown ad event"},404);
   if(event.status!=="pending")return json({success:true,duplicate:true});
   // Impression and click callbacks can arrive in either order and share one ymid.
@@ -425,6 +425,15 @@ async function monetagPostback(req,env){
     await env.DB.prepare("UPDATE monetag_reward_events SET event_type=?,reward_event_type=?,estimated_price=? WHERE ymid=? AND status='pending'")
       .bind(eventType,rewardType,price,ymid).run();
     return json({success:true,credited:false,pending:true});
+  }
+  if(event.purpose==="spin"&&event.spin_attempt_id){
+    try{
+      const r=await env.DB.batch([
+        env.DB.prepare("UPDATE monetag_reward_events SET status='credited',event_type=?,reward_event_type=?,estimated_price=?,credited_at=CURRENT_TIMESTAMP WHERE ymid=? AND status='pending'").bind(eventType,rewardType,price,ymid),
+        env.DB.prepare("UPDATE spin_attempts SET status='verified',verified_at=CURRENT_TIMESTAMP WHERE id=? AND status='locked' AND monetag_ymid=? AND EXISTS(SELECT 1 FROM monetag_reward_events WHERE ymid=? AND status='credited')").bind(event.spin_attempt_id,ymid,ymid)
+      ]);
+      return json({success:true,verified:Number(r[1]?.meta?.changes||0)===1});
+    }catch(e){console.error(e);return json({success:false,error:"Spin verification failed"},500);}
   }
   const key="monetag_reward:"+ymid;
   try{
@@ -470,25 +479,28 @@ async function openDirectAd(env,uid,b){
 async function spinState(env,uid){
   const [settings,ad,attempt,options]=await Promise.all([
     env.DB.prepare("SELECT enabled,daily_limit FROM spin_settings WHERE id=1").first(),
-    env.DB.prepare("SELECT id,direct_link_url FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first(),
-    env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first(),
+    env.DB.prepare("SELECT id,placement_id,settings_json FROM ad_settings WHERE provider='Monetag' AND ad_type='rewarded' AND enabled=1").first(),
+    env.DB.prepare("SELECT id,reward_coins,status,monetag_ymid,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first(),
     env.DB.prepare("SELECT reward_coins,probability_bps FROM spin_reward_options WHERE enabled=1 ORDER BY sort_order").all()
   ]);
-  const verificationReady=!!env.ADSTERRA_POSTBACK_SECRET&&!!ad?.direct_link_url;
+  let sdkUrl="";try{sdkUrl=JSON.parse(ad?.settings_json||"{}").sdk_script_url||"";}catch{}
+  const verificationReady=!!env.MONETAG_POSTBACK_SECRET&&!!ad?.placement_id&&!!sdkUrl;
   return json({success:true,enabled:Number(settings?.enabled||0)===1&&verificationReady,verification_ready:verificationReady,
-    reason:!verificationReady?"Adsterra completion verification is not configured":null,
+    reason:!verificationReady?"Monetag Rewarded Ad and server postback are not configured":null,
+    monetag_setting_id:ad?.id||null,placement_id:ad?.placement_id||null,sdk_script_url:sdkUrl||null,
     daily_limit:1,remaining_spins:attempt?0:1,attempt:attempt||null,reward_options:options.results||[]});
 }
 async function spinNow(env,uid,b){
   const key=b?.idempotency_key;
-  if(!idem(key))return json({success:false,error:"A valid idempotency key is required"},400);
+  if(!idem(key))return json({success:false,error:"A valid idempotency_key is required"},400);
   const [settings,ad]=await Promise.all([
     env.DB.prepare("SELECT enabled FROM spin_settings WHERE id=1").first(),
-    env.DB.prepare("SELECT id,direct_link_url FROM ad_settings WHERE provider='Adsterra' AND ad_type='direct_link' AND enabled=1").first()
+    env.DB.prepare("SELECT id,placement_id,settings_json FROM ad_settings WHERE provider='Monetag' AND ad_type='rewarded' AND enabled=1").first()
   ]);
+  let sdkUrl="";try{sdkUrl=JSON.parse(ad?.settings_json||"{}").sdk_script_url||"";}catch{}
   if(Number(settings?.enabled||0)!==1)return json({success:false,error:"Daily Spin is disabled"},403);
-  if(!ad?.direct_link_url||!env.ADSTERRA_POSTBACK_SECRET)return json({success:false,error:"Adsterra completion verification is not configured. No locked reward can be issued yet."},503);
-  const existing=await env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
+  if(!ad?.placement_id||!sdkUrl||!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Monetag Rewarded Ad server verification is not configured"},503);
+  const existing=await env.DB.prepare("SELECT id,reward_coins,status,monetag_ymid,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
   if(existing)return json({success:true,already_spun:true,attempt:existing,daily_limit:1});
   const {results=[]}=await env.DB.prepare("SELECT reward_coins,probability_bps FROM spin_reward_options WHERE enabled=1 ORDER BY sort_order").all();
   const total=results.reduce((sum,x)=>sum+Number(x.probability_bps||0),0);
@@ -498,17 +510,33 @@ async function spinNow(env,uid,b){
   const roll=random[0]%10000;
   let cursor=0,reward=Number(results[results.length-1].reward_coins);
   for(const option of results){cursor+=Number(option.probability_bps);if(roll<cursor){reward=Number(option.reward_coins);break;}}
-  const id=crypto.randomUUID(),psid=crypto.randomUUID().replace(/-/g,"");
+  const id=crypto.randomUUID(),psid=crypto.randomUUID().replace(/-/g,""),ymid=crypto.randomUUID();
   try{
-    const inserted=await env.DB.prepare(`INSERT OR IGNORE INTO spin_attempts
-      (id,firebase_uid,day_key,reward_coins,status,adsterra_psid,idempotency_key)
-      SELECT ?,?,date('now','+6 hours'),?,'locked',?,?
-      WHERE NOT EXISTS(SELECT 1 FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours'))`)
-      .bind(id,uid,reward,psid,key,uid).run();
-    const attempt=await env.DB.prepare("SELECT id,reward_coins,status,ad_opened_at,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
+    const result=await env.DB.batch([
+      env.DB.prepare(`INSERT OR IGNORE INTO spin_attempts
+        (id,firebase_uid,day_key,reward_coins,status,adsterra_psid,idempotency_key,monetag_ymid)
+        SELECT ?,?,date('now','+6 hours'),?,'locked',?,?,?
+        WHERE NOT EXISTS(SELECT 1 FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours'))`)
+        .bind(id,uid,reward,psid,key,ymid,uid),
+      env.DB.prepare(`INSERT OR IGNORE INTO monetag_reward_events(ymid,firebase_uid,reward_coins,status,purpose,spin_attempt_id)
+        SELECT ?,?,0,'pending','spin',? WHERE changes()=1`).bind(ymid,uid,id)
+    ]);
+    const attempt=await env.DB.prepare("SELECT id,reward_coins,status,monetag_ymid,verified_at,claimed_at FROM spin_attempts WHERE firebase_uid=? AND day_key=date('now','+6 hours')").bind(uid).first();
     if(!attempt)return json({success:false,error:"Daily spin could not be created"},409);
-    return json({success:true,already_spun:!inserted.meta?.changes,attempt,daily_limit:1});
+    return json({success:true,already_spun:!result[0]?.meta?.changes,attempt,daily_limit:1});
   }catch(e){console.error(e);return json({success:false,error:"Daily spin failed"},500);}
+}
+async function startSpinMonetag(env,uid,b){
+  const id=String(b?.spin_id||"");
+  const attempt=await env.DB.prepare("SELECT id,status,monetag_ymid FROM spin_attempts WHERE id=? AND firebase_uid=?").bind(id,uid).first();
+  if(!attempt)return json({success:false,error:"Spin attempt not found"},404);
+  if(attempt.status!=="locked")return json({success:false,error:"This spin is no longer available"},409);
+  const ad=await env.DB.prepare("SELECT id,placement_id,settings_json FROM ad_settings WHERE provider='Monetag' AND ad_type='rewarded' AND enabled=1").first();
+  let sdkUrl="";try{sdkUrl=JSON.parse(ad?.settings_json||"{}").sdk_script_url||"";}catch{}
+  if(!ad?.placement_id||!sdkUrl||!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Monetag Rewarded Ad is not configured"},503);
+  const event=await env.DB.prepare("SELECT status FROM monetag_reward_events WHERE ymid=? AND firebase_uid=? AND purpose='spin'").bind(attempt.monetag_ymid,uid).first();
+  if(!event||event.status!=="pending")return json({success:false,error:"Spin ad event is not available"},409);
+  return json({success:true,ymid:attempt.monetag_ymid,placement_id:ad.placement_id,sdk_script_url:sdkUrl});
 }
 async function openSpinAd(env,uid,b){
   const id=String(b?.spin_id||"");
@@ -545,7 +573,7 @@ async function claimSpinReward(env,uid,b){
   if(!id||id.length>64)return json({success:false,error:"Invalid spin attempt"},400);
   const attempt=await env.DB.prepare("SELECT reward_coins,status FROM spin_attempts WHERE id=? AND firebase_uid=?").bind(id,uid).first();
   if(!attempt)return json({success:false,error:"Spin attempt not found"},404);
-  if(attempt.status!=="verified")return json({success:false,error:"Adsterra has not verified completion. Reward remains locked."},403);
+  if(attempt.status!=="verified")return json({success:false,error:"Monetag has not verified a valued rewarded impression. Reward remains locked."},403);
   const key="spin_reward:"+id;
   try{
     const result=await env.DB.batch([
@@ -776,7 +804,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/telegram/link"&&req.method==="POST")return linkTelegramAccount(req,env,c.sub);
     if(u.pathname==="/api/spin/state"&&req.method==="GET")return spinState(env,c.sub);
     if(u.pathname==="/api/spin"&&req.method==="POST")return spinNow(env,c.sub,await body(req));
-    if(u.pathname==="/api/spin/ad-open"&&req.method==="POST")return openSpinAd(env,c.sub,await body(req));
+    if(u.pathname==="/api/spin/ad-start"&&req.method==="POST")return startSpinMonetag(env,c.sub,await body(req));
     if(u.pathname==="/api/spin/claim"&&req.method==="POST")return claimSpinReward(env,c.sub,await body(req));
     if(u.pathname==="/api/referral/commission"&&req.method==="GET")return referralCommissionInfo(env,c.sub);
     if(u.pathname==="/api/referral/commission/claim"&&req.method==="POST")return claimReferralCommission(env,c.sub,await body(req));
