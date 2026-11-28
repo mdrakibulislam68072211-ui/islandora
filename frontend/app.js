@@ -1148,33 +1148,34 @@
   let spinRotation = 0;
   let monetagSettingId = null, monetagZone = null, monetagSdkUrl = null;
   let monetagInterstitial = null, interstitialTimer = null;
-  let monetagSdkPromise = null;
-  async function loadMonetagSdk() {
-    if (monetagSdkPromise) return monetagSdkPromise;
-    monetagSdkPromise = new Promise((resolve, reject) => {
-      const existing = document.querySelector('script[data-islandora-monetag="1"]');
+  const monetagSdkPromises = new Map();
+  async function loadMonetagSdk(zone = monetagZone, sdkUrl = monetagSdkUrl) {
+    if (!zone || !sdkUrl) throw new Error("Monetag placement is not configured.");
+    const key = String(zone) + "|" + String(sdkUrl);
+    if (monetagSdkPromises.has(key)) return monetagSdkPromises.get(key);
+    const promise = new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-islandora-monetag="1"][data-zone="' + String(zone) + '"]');
       if (existing) { resolve(); return; }
       const script = document.createElement("script");
-      script.src = monetagSdkUrl;
+      script.src = sdkUrl;
       script.async = true;
-      script.dataset.zone = monetagZone;
-      script.dataset.sdk = "show_" + monetagZone;
+      script.dataset.zone = zone;
+      script.dataset.sdk = "show_" + zone;
       script.dataset.islandoraMonetag = "1";
       script.onload = resolve;
-      script.onerror = () => { monetagSdkPromise = null; reject(new Error("Monetag SDK could not be loaded.")); };
+      script.onerror = () => { monetagSdkPromises.delete(key); reject(new Error("Monetag SDK could not be loaded.")); };
       document.head.appendChild(script);
     });
-    return monetagSdkPromise;
+    monetagSdkPromises.set(key, promise);
+    return promise;
   }
   async function runHourlyMonetagInterstitial() {
     if (!monetagInterstitial || !auth.currentUser) return;
     try {
       const result = await apiRequest(auth.currentUser, "/api/ads/monetag/interstitial", "POST", {});
-      monetagZone = result.placement_id; monetagSdkUrl = JSON.parse(monetagInterstitial.settings_json || "{}").sdk_script_url || result.sdk_script_url;
-      monetagSdkUrl = result.sdk_script_url || monetagSdkUrl;
-      monetagSdkPromise = null;
-      await loadMonetagSdk();
-      const show = window["show_" + monetagZone];
+      const interstitialZone = result.placement_id;
+      await loadMonetagSdk(interstitialZone, result.sdk_script_url);
+      const show = window["show_" + interstitialZone];
       if (typeof show === "function") await show({ requestVar: "islandora_hourly_interstitial" });
     } catch (error) { console.warn("Monetag hourly interstitial:", error.message); }
     if (monetagInterstitial) interstitialTimer = setTimeout(runHourlyMonetagInterstitial, 60 * 60 * 1000);
@@ -1204,7 +1205,7 @@
     button.disabled = true; message.textContent = "Preparing verified ad...";
     try {
       const event = await apiRequest(auth.currentUser, "/api/ads/monetag/start", "POST", { ad_setting_id: monetagSettingId });
-      await loadMonetagSdk();
+      await loadMonetagSdk(monetagZone, monetagSdkUrl);
       const show = window["show_" + monetagZone];
       if (typeof show !== "function") throw new Error("Monetag ad function is unavailable.");
       const result = await show({ ymid: event.ymid, requestVar: "islandora_reward_button" });
