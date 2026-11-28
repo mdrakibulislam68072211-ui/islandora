@@ -204,35 +204,39 @@ async function ensureReferralCode(db, uid) {
   throw new Error("Could not create referral code.");
 }
 
-async function saveDevice(db, uid, token) {
+async function saveDevice(db, uid, token, fingerprintHash) {
   if (
     typeof token !== "string" ||
     token.length < 20 ||
     token.length > 256
-  ) {
-    throw new Error("Invalid device token.");
+  ) throw new Error("Invalid device token.");
+  if (typeof fingerprintHash !== "string" || !/^[a-f0-9]{64}$/.test(fingerprintHash)) {
+    throw new Error("Invalid device fingerprint.");
   }
 
   const deviceHash = await hashDeviceToken(token);
-
   await db.prepare(
     `INSERT INTO user_devices
-      (id, firebase_uid, device_token_hash, device_type, platform)
-     VALUES (?, ?, ?, 'browser', 'web')
+      (id, firebase_uid, device_token_hash, device_fingerprint_hash, device_type, platform)
+     VALUES (?, ?, ?, ?, 'browser', 'web')
      ON CONFLICT(firebase_uid, device_token_hash)
-     DO UPDATE SET last_seen_at = CURRENT_TIMESTAMP`
-  ).bind(crypto.randomUUID(), uid, deviceHash).run();
+     DO UPDATE SET
+       device_fingerprint_hash = excluded.device_fingerprint_hash,
+       last_seen_at = CURRENT_TIMESTAMP`
+  ).bind(crypto.randomUUID(), uid, deviceHash, fingerprintHash).run();
 
-  // If both referral accounts are later found on the same device,
-  // invalidate that referral. Accounts themselves remain active.
+  // Exact coarse fingerprint matches catch separate browser profiles on one phone.
+  // This only disqualifies referral rewards; signup and signup Gems remain unaffected.
   await db.prepare(
     `UPDATE referrals
      SET is_valid = 0, valid_at = NULL
      WHERE EXISTS (
-       SELECT 1
-       FROM user_devices a
-       JOIN user_devices b
-         ON a.device_token_hash = b.device_token_hash
+       SELECT 1 FROM user_devices a
+       JOIN user_devices b ON (
+         a.device_token_hash = b.device_token_hash
+         OR (a.device_fingerprint_hash IS NOT NULL
+             AND a.device_fingerprint_hash = b.device_fingerprint_hash)
+       )
        WHERE a.firebase_uid = referrals.referrer_uid
          AND b.firebase_uid = referrals.referred_uid
      )`
@@ -246,19 +250,22 @@ async function hasSharedDevice(db, uidA, uidB) {
     `SELECT 1 AS found
      FROM user_devices a
      JOIN user_devices b
-       ON a.device_token_hash = b.device_token_hash
+       ON (
+         a.device_token_hash = b.device_token_hash
+         OR (a.device_fingerprint_hash IS NOT NULL
+             AND a.device_fingerprint_hash = b.device_fingerprint_hash)
+       )
      WHERE a.firebase_uid = ?
        AND b.firebase_uid = ?
      LIMIT 1`
   ).bind(uidA, uidB).first();
-
   return !!result;
 }
 
 async function registerDevice(request, env, user) {
   const body = await request.json();
 
-  await saveDevice(env.DB, user.uid, body.device_token);
+  await saveDevice(env.DB, user.uid, body.device_token, body.device_fingerprint_hash);
 
   const referralCode = await ensureReferralCode(
     env.DB,
@@ -285,10 +292,11 @@ async function applyReferral(request, env, user) {
     }, 400);
   }
 
-  const deviceHash = await saveDevice(
+  await saveDevice(
     env.DB,
     user.uid,
-    body.device_token
+    body.device_token,
+    body.device_fingerprint_hash
   );
 
   const referrer = await env.DB.prepare(
