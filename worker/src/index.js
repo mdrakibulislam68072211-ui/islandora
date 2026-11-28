@@ -427,6 +427,7 @@ async function monetagPostback(req,env){
     return json({success:true,credited:false,pending:true});
   }
   if(event.purpose==="spin"&&event.spin_attempt_id){
+    if(eventType!=="impression")return json({success:true,credited:false,pending:true});
     try{
       const r=await env.DB.batch([
         env.DB.prepare("UPDATE monetag_reward_events SET status='credited',event_type=?,reward_event_type=?,estimated_price=?,credited_at=CURRENT_TIMESTAMP WHERE ymid=? AND status='pending'").bind(eventType,rewardType,price,ymid),
@@ -456,6 +457,23 @@ async function monetagRewardStatus(env,uid,ymid){
 async function listAdPlacements(env,uid){
   const {results=[]}=await env.DB.prepare("SELECT id,provider,ad_type,name,placement_id,settings_json,cooldown_hours,daily_limit,reward_coins FROM ad_settings WHERE enabled=1 ORDER BY provider").all();
   return json({success:true,ads:results.filter(ad=>ad.provider!=="Monetag"||!!env.MONETAG_POSTBACK_SECRET)});
+}
+async function startMonetagInterstitial(env,uid){
+  const ad=await env.DB.prepare("SELECT id,placement_id,settings_json,cooldown_hours,daily_limit FROM ad_settings WHERE provider='Monetag' AND ad_type='in_app_interstitial' AND enabled=1").first();
+  let sdkUrl="";try{sdkUrl=JSON.parse(ad?.settings_json||"{}").sdk_script_url||"";}catch{}
+  if(!ad||!/^\d{3,20}$/.test(String(ad.placement_id||""))||!sdkUrl.startsWith("https://"))return json({success:false,error:"Monetag In-App Interstitial is not configured"},404);
+  try{
+    const activity=await env.DB.prepare(`INSERT INTO user_ad_activity(firebase_uid,ad_setting_id,day_key,opens_today,last_opened_at)
+      VALUES(?,?,date('now'),1,CURRENT_TIMESTAMP)
+      ON CONFLICT(firebase_uid,ad_setting_id) DO UPDATE SET
+       opens_today=CASE WHEN user_ad_activity.day_key=date('now') THEN user_ad_activity.opens_today+1 ELSE 1 END,
+       day_key=date('now'),last_opened_at=CURRENT_TIMESTAMP
+      WHERE user_ad_activity.last_opened_at<=datetime('now','-'||?||' hours')
+        AND (user_ad_activity.day_key<>date('now') OR user_ad_activity.opens_today<?)`)
+      .bind(uid,ad.id,Number(ad.cooldown_hours),Number(ad.daily_limit)).run();
+    if(!activity.meta?.changes)return json({success:false,error:"Hourly ad interval has not elapsed"},429);
+    return json({success:true,placement_id:ad.placement_id,sdk_script_url:sdkUrl});
+  }catch(e){console.error(e);return json({success:false,error:"Could not prepare hourly ad"},500);}
 }
 async function openDirectAd(env,uid,b){
   const id=String(b?.ad_setting_id||"");
@@ -645,15 +663,16 @@ async function saveAdminAd(env,uid,b){
   const provider=String(b?.provider||""),type=String(b?.ad_type||""),name=String(b?.name||"").trim();
   const enabled=b?.enabled?1:0,url=String(b?.direct_link_url||"").trim(),placement=String(b?.placement_id||"").trim(),sdkUrl=String(b?.sdk_script_url||"").trim();
   const cooldown=Number(b?.cooldown_hours),limit=Number(b?.daily_limit),reward=Number(b?.reward_coins);
-  if(!["Adsterra","Monetag"].includes(provider)||!["direct_link","rewarded"].includes(type)||!name||name.length>100||
+  if(!["Adsterra","Monetag"].includes(provider)||!["direct_link","rewarded","in_app_interstitial"].includes(type)||!name||name.length>100||
      !Number.isInteger(cooldown)||cooldown<0||cooldown>720||!Number.isInteger(limit)||limit<0||limit>1000||
      !Number.isSafeInteger(reward)||reward<0||reward>1000000)
     return json({success:false,error:"Invalid ad settings"},400);
   if(provider==="Adsterra"&&type!=="direct_link")return json({success:false,error:"Adsterra is configured for direct links only"},400);
-  if(provider==="Monetag"&&type!=="rewarded")return json({success:false,error:"Monetag is configured for rewarded ads only"},400);
+  if(provider==="Monetag"&&!["rewarded","in_app_interstitial"].includes(type))return json({success:false,error:"Choose a supported Monetag placement type"},400);
   if(provider==="Adsterra"&&(!url.startsWith("https://")||url.length>2048))return json({success:false,error:"Enter a valid HTTPS direct link"},400);
-  if(provider==="Monetag"&&(!/^\d{3,20}$/.test(placement)||!sdkUrl.startsWith("https://")||sdkUrl.length>2048))return json({success:false,error:"A numeric Monetag main zone ID and HTTPS SDK script URL are required"},400);
-  if(provider==="Monetag"&&enabled&&!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Configure the Monetag postback secret before enabling rewarded ads"},503);
+  if(provider==="Monetag"&&(!/^\d{3,20}$/.test(placement)||!sdkUrl.startsWith("https://")||sdkUrl.length>2048))return json({success:false,error:"A numeric Monetag zone ID and HTTPS SDK script URL are required"},400);
+  if(provider==="Monetag"&&type==="rewarded"&&enabled&&!env.MONETAG_POSTBACK_SECRET)return json({success:false,error:"Configure the Monetag postback secret before enabling rewarded ads"},503);
+  if(provider==="Monetag"&&type==="in_app_interstitial"&&(cooldown<1||limit<1))return json({success:false,error:"Hourly interstitials require at least a 1-hour cooldown and daily limit"},400);
   const id=crypto.randomUUID();
   try{
     await env.DB.prepare(`INSERT INTO ad_settings(id,provider,ad_type,name,enabled,direct_link_url,placement_id,cooldown_hours,daily_limit,reward_coins,updated_by,settings_json)
@@ -816,6 +835,7 @@ export default {async scheduled(controller,env,ctx){await processReferralOutbox(
     if(u.pathname==="/api/withdrawals"&&req.method==="GET")return listWithdrawals(env,c.sub);
     if(u.pathname==="/api/withdrawals"&&req.method==="POST")return createWithdrawal(env,c.sub,await body(req));
     if(u.pathname==="/api/ads/monetag/start"&&req.method==="POST")return startMonetagReward(env,c.sub,await body(req));
+    if(u.pathname==="/api/ads/monetag/interstitial"&&req.method==="POST")return startMonetagInterstitial(env,c.sub);
     if(u.pathname==="/api/ads/monetag/status"&&req.method==="GET")return monetagRewardStatus(env,c.sub,u.searchParams.get("ymid")||"");
     if(u.pathname==="/api/ads/placements"&&req.method==="GET")return listAdPlacements(env,c.sub);
     if(u.pathname==="/api/ads/direct-open"&&req.method==="POST")return openDirectAd(env,c.sub,await body(req));
